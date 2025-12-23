@@ -104,21 +104,108 @@ class GeminiService:
     
     def _build_user_context(
         self,
-        nationality: str,
-        gpa: float,
-        major: str,
+        citizenship_status: Optional[str] = None,
+        nationality: Optional[str] = None,
+        gpa: float = 0.0,
+        major: str = "",
+        sat_score: Optional[int] = None,
+        act_score: Optional[int] = None,
+        state_of_residence: Optional[str] = None,
+        household_income_tier: Optional[str] = None,
+        english_proficiency_score: Optional[int] = None,
+        english_test_type: Optional[str] = None,
+        campus_vibe: Optional[str] = None,
+        is_student_athlete: bool = False,
+        has_legacy_status: bool = False,
+        legacy_universities: Optional[List[str]] = None,
+        post_grad_goal: Optional[str] = None,
+        is_first_gen: bool = False,
+        ap_class_count: Optional[int] = None,
+        ap_classes: Optional[List[str]] = None,
         excluded_colleges: Optional[List[str]] = None,
     ) -> str:
-        """Build contextual prompt with user profile."""
+        """Build contextual prompt with user profile, branching for US vs International."""
+        
+        # Determine if domestic or international
+        is_domestic = citizenship_status in ["US_CITIZEN", "PERMANENT_RESIDENT", "DACA"]
+        
         context_parts = [
-            f"## Student Profile",
-            f"- **Nationality:** {nationality}",
-            f"- **GPA:** {gpa}/4.0",
-            f"- **Intended Major:** {major}",
+            "## Student Profile",
+            f"- **Citizenship Status:** {citizenship_status or 'Not specified'}",
         ]
         
+        if nationality:
+            context_parts.append(f"- **Nationality:** {nationality}")
+        
+        context_parts.extend([
+            f"- **GPA:** {gpa}/4.0",
+            f"- **Intended Major:** {major}",
+        ])
+        
+        # First-generation status
+        if is_first_gen:
+            context_parts.append("- **First-Generation College Student:** Yes")
+        
+        # AP Classes
+        if ap_class_count is not None and ap_class_count > 0:
+            context_parts.append(f"- **AP Classes Taken:** {ap_class_count}")
+            if ap_classes and len(ap_classes) > 0:
+                context_parts.append(f"- **AP Subjects:** {', '.join(ap_classes)}")
+        
+        # Test scores
+        if sat_score:
+            context_parts.append(f"- **SAT Score:** {sat_score}/1600")
+        if act_score:
+            context_parts.append(f"- **ACT Score:** {act_score}/36")
+        
+        # Branch logic based on citizenship
+        if is_domestic:
+            context_parts.append("\n### 🇺🇸 Domestic Student Considerations")
+            if state_of_residence:
+                context_parts.append(f"- **Home State:** {state_of_residence} (prioritize in-state public options)")
+            if household_income_tier:
+                context_parts.append(f"- **Income Tier:** {household_income_tier}")
+                if household_income_tier == "LOW":
+                    context_parts.append("- **FAFSA Eligible:** Yes - Emphasize Pell Grant eligibility and need-based aid")
+                elif household_income_tier == "MEDIUM":
+                    context_parts.append("- **FAFSA Eligible:** Yes - Look for merit + need combination aid")
+            context_parts.append("- **Priority:** In-state tuition, federal aid (FAFSA), state grants")
+        else:
+            context_parts.append("\n### 🌍 International Student Considerations")
+            if english_proficiency_score:
+                test_type = english_test_type or "TOEFL"
+                if test_type == "TOEFL":
+                    context_parts.append(f"- **TOEFL iBT Score:** {english_proficiency_score}/120")
+                elif test_type == "DUOLINGO":
+                    context_parts.append(f"- **Duolingo English Test:** {english_proficiency_score}/160")
+                elif test_type == "IELTS":
+                    context_parts.append(f"- **IELTS Score:** {english_proficiency_score}/9.0")
+                else:
+                    context_parts.append(f"- **English Proficiency:** {english_proficiency_score}")
+            if nationality:
+                context_parts.append(f"- **Check Need-Blind status for:** {nationality}")
+            context_parts.append("- **Priority:** Need-Blind/Need-Aware policies, international scholarships, English requirements")
+        
+        # Fit factors
+        if campus_vibe or is_student_athlete or has_legacy_status or post_grad_goal:
+            context_parts.append("\n### Fit Preferences")
+            if campus_vibe:
+                context_parts.append(f"- **Campus Vibe:** {campus_vibe}")
+            if is_student_athlete:
+                context_parts.append("- **Student Athlete:** Yes - Consider NCAA Division programs and athletic scholarships")
+            if has_legacy_status and legacy_universities:
+                context_parts.append(f"- **Legacy Status at:** {', '.join(legacy_universities)}")
+            if post_grad_goal:
+                goal_text = {
+                    "JOB_PLACEMENT": "Immediate job placement (prioritize career services, industry connections)",
+                    "GRADUATE_SCHOOL": "Graduate/professional school (prioritize research opportunities)",
+                    "ENTREPRENEURSHIP": "Entrepreneurship (look for startup ecosystems, incubators)",
+                    "UNDECIDED": "Undecided (balanced liberal arts approach)"
+                }.get(post_grad_goal, post_grad_goal)
+                context_parts.append(f"- **Post-Grad Goal:** {goal_text}")
+        
         if excluded_colleges:
-            context_parts.append(f"- **Blacklisted Schools (DO NOT SUGGEST):** {', '.join(excluded_colleges)}")
+            context_parts.append(f"\n- **Blacklisted Schools (DO NOT SUGGEST):** {', '.join(excluded_colleges)}")
         
         return "\n".join(context_parts)
     
@@ -249,34 +336,75 @@ Respond in JSON format:
     async def stream_recommendations(
         self,
         user_query: str,
-        nationality: str,
-        gpa: float,
-        major: str,
+        citizenship_status: Optional[str] = None,
+        nationality: Optional[str] = None,
+        gpa: float = 0.0,
+        major: str = "",
+        sat_score: Optional[int] = None,
+        act_score: Optional[int] = None,
+        state_of_residence: Optional[str] = None,
+        household_income_tier: Optional[str] = None,
+        english_proficiency_score: Optional[int] = None,
+        english_test_type: Optional[str] = None,
+        campus_vibe: Optional[str] = None,
+        is_student_athlete: bool = False,
+        has_legacy_status: bool = False,
+        legacy_universities: Optional[List[str]] = None,
+        post_grad_goal: Optional[str] = None,
+        is_first_gen: bool = False,
+        ap_class_count: Optional[int] = None,
+        ap_classes: Optional[List[str]] = None,
         excluded_colleges: Optional[List[str]] = None
     ) -> AsyncGenerator[str, None]:
         """
         Stream recommendations via SSE with search grounding.
         Uses conversational format for better streaming UX.
+        Branches logic for US vs International students.
         """
         try:
-            # Build a concise, focused prompt for college list creation
-            streaming_prompt = f"""You are a college admissions consultant. Create a focused college list based on the student's profile.
+            # Build user context with all profile fields
+            user_context = self._build_user_context(
+                citizenship_status=citizenship_status,
+                nationality=nationality,
+                gpa=gpa,
+                major=major,
+                sat_score=sat_score,
+                act_score=act_score,
+                state_of_residence=state_of_residence,
+                household_income_tier=household_income_tier,
+                english_proficiency_score=english_proficiency_score,
+                english_test_type=english_test_type,
+                campus_vibe=campus_vibe,
+                is_student_athlete=is_student_athlete,
+                has_legacy_status=has_legacy_status,
+                legacy_universities=legacy_universities,
+                post_grad_goal=post_grad_goal,
+                is_first_gen=is_first_gen,
+                ap_class_count=ap_class_count,
+                ap_classes=ap_classes,
+                excluded_colleges=excluded_colleges
+            )
+            
+            # Determine if domestic for prompt customization
+            is_domestic = citizenship_status in ["US_CITIZEN", "PERMANENT_RESIDENT", "DACA"]
+            
+            # Build a focused prompt with branched instructions
+            streaming_prompt = f"""{self._system_prompt}
 
-**Student:** {nationality} student, GPA {gpa}/4.0, Major: {major}
-{f"**Exclude:** {', '.join(excluded_colleges)}" if excluded_colleges else ""}
+{user_context}
 
-**Query:** {user_query}
+**User Query:** {user_query}
 
 **Instructions:**
 - Provide 3-5 universities maximum
-- For each: Name, Reach/Target/Safety label, 1-2 sentence fit explanation
-- Mention financial aid ONLY if specifically asked
+- For each: Name, Reach/Target/Safety label, match score, 1-2 sentence fit explanation
+{"- Highlight in-state options if available in " + state_of_residence if is_domestic and state_of_residence else "- Include Need-Blind status for international applicants"}
 - Be concise and direct
-- Use Google Search to verify current info
+- Use Google Search to verify current info for 2025-2026 cycle
 
 Format each university as:
-**[University Name]** (Reach/Target/Safety)
-Brief explanation of fit and key programs.
+**[University Name]** (Reach/Target/Safety) - Match: XX%
+Brief explanation of fit, key programs, and relevant financial aid info.
 """
 
             # Use streaming with search grounding

@@ -112,9 +112,27 @@ class UserProfileService:
             
             result = self.client.table("profiles").insert({
                 "user_id": str(user_id),
+                # Core identification
+                "citizenship_status": data.citizenship_status.value if data.citizenship_status else None,
                 "nationality": data.nationality,
+                # Academic metrics
                 "gpa": data.gpa,
                 "major": data.major,
+                "sat_score": data.sat_score,
+                "act_score": data.act_score,
+                # US-specific
+                "state_of_residence": data.state_of_residence,
+                # Financial info
+                "household_income_tier": data.household_income_tier.value if data.household_income_tier else None,
+                # International-specific
+                "english_proficiency_score": data.english_proficiency_score,
+                # Fit factors
+                "campus_vibe": data.campus_vibe.value if data.campus_vibe else None,
+                "is_student_athlete": data.is_student_athlete,
+                "has_legacy_status": data.has_legacy_status,
+                "legacy_universities": data.legacy_universities,
+                "post_grad_goal": data.post_grad_goal.value if data.post_grad_goal else None,
+                # Timestamps
                 "created_at": now,
                 "updated_at": now,
             }).execute()

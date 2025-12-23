@@ -25,7 +25,26 @@ interface ChatState {
 interface UseChatReturn extends ChatState {
   sendMessage: (
     query: string,
-    profile: { nationality: string; gpa: number; major: string },
+    profile: {
+      citizenshipStatus?: string;
+      nationality?: string;
+      gpa: number;
+      major: string;
+      satScore?: number;
+      actScore?: number;
+      stateOfResidence?: string;
+      householdIncomeTier?: string;
+      englishProficiencyScore?: number;
+      englishTestType?: string;
+      campusVibe?: string;
+      isStudentAthlete?: boolean;
+      hasLegacyStatus?: boolean;
+      legacyUniversities?: string[];
+      postGradGoal?: string;
+      isFirstGen?: boolean;
+      apClassCount?: number;
+      apClasses?: string[];
+    },
     options?: { mode: 'text' | 'card' }
   ) => Promise<void>;
   clearMessages: () => void;
@@ -40,12 +59,31 @@ export function useChat(): UseChatReturn {
     isStreaming: false,
     error: null,
   });
-  
+
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(async (
     query: string,
-    profile: { nationality: string; gpa: number; major: string },
+    profile: {
+      citizenshipStatus?: string;
+      nationality?: string;
+      gpa: number;
+      major: string;
+      satScore?: number;
+      actScore?: number;
+      stateOfResidence?: string;
+      householdIncomeTier?: string;
+      englishProficiencyScore?: number;
+      englishTestType?: string;
+      campusVibe?: string;
+      isStudentAthlete?: boolean;
+      hasLegacyStatus?: boolean;
+      legacyUniversities?: string[];
+      postGradGoal?: string;
+      isFirstGen?: boolean;
+      apClassCount?: number;
+      apClasses?: string[];
+    },
     options: { mode: 'text' | 'card' } = { mode: 'text' }
   ) => {
     // Add user message
@@ -83,7 +121,7 @@ export function useChat(): UseChatReturn {
       }
       abortControllerRef.current = new AbortController();
 
-      const endpoint = options.mode === 'card' 
+      const endpoint = options.mode === 'card'
         ? `${API_BASE}/api/recommend`
         : `${API_BASE}/api/recommend/stream`;
 
@@ -95,9 +133,24 @@ export function useChat(): UseChatReturn {
         },
         body: JSON.stringify({
           query,
+          citizenship_status: profile.citizenshipStatus,
           nationality: profile.nationality,
           gpa: profile.gpa,
           major: profile.major,
+          sat_score: profile.satScore,
+          act_score: profile.actScore,
+          state_of_residence: profile.stateOfResidence,
+          household_income_tier: profile.householdIncomeTier,
+          english_proficiency_score: profile.englishProficiencyScore,
+          english_test_type: profile.englishTestType,
+          campus_vibe: profile.campusVibe,
+          is_student_athlete: profile.isStudentAthlete,
+          has_legacy_status: profile.hasLegacyStatus,
+          legacy_universities: profile.legacyUniversities,
+          post_grad_goal: profile.postGradGoal,
+          is_first_gen: profile.isFirstGen,
+          ap_class_count: profile.apClassCount,
+          ap_classes: profile.apClasses,
         }),
         signal: abortControllerRef.current.signal,
       });
@@ -109,18 +162,18 @@ export function useChat(): UseChatReturn {
       if (options.mode === 'card') {
         // Handle JSON response
         const data = await response.json();
-        
+
         setState(prev => ({
           ...prev,
           isStreaming: false,
           messages: prev.messages.map(msg =>
             msg.id === assistantMessage.id
-              ? { 
-                  ...msg, 
-                  content: "Here are the recommended universities based on your profile:",
-                  recommendations: data.recommendations,
-                  sources: data.grounding_sources
-                }
+              ? {
+                ...msg,
+                content: "Here are the recommended universities based on your profile:",
+                recommendations: data.recommendations,
+                sources: data.grounding_sources
+              }
               : msg
           ),
         }));
@@ -146,10 +199,10 @@ export function useChat(): UseChatReturn {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
-                
+
                 if (data.text) {
                   fullContent += data.text;
-                  
+
                   // Update message content
                   setState(prev => ({
                     ...prev,
@@ -160,7 +213,7 @@ export function useChat(): UseChatReturn {
                     ),
                   }));
                 }
-                
+
                 if (data.status === 'done') {
                   break;
                 }
@@ -172,12 +225,12 @@ export function useChat(): UseChatReturn {
         }
         setState(prev => ({ ...prev, isStreaming: false }));
       }
-      
+
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
         return;
       }
-      
+
       setState(prev => ({
         ...prev,
         isStreaming: false,

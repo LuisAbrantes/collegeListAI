@@ -14,6 +14,31 @@
  */
 export type CollegeLabel = 'Reach' | 'Target' | 'Safety';
 
+/**
+ * Student citizenship/residency status for financial aid determination
+ */
+export type CitizenshipStatus = 'US_CITIZEN' | 'PERMANENT_RESIDENT' | 'INTERNATIONAL' | 'DACA';
+
+/**
+ * Income tier for financial aid estimation
+ */
+export type HouseholdIncomeTier = 'LOW' | 'MEDIUM' | 'HIGH';
+
+/**
+ * Preferred campus environment type
+ */
+export type CampusVibe = 'URBAN' | 'SUBURBAN' | 'RURAL';
+
+/**
+ * Post-graduation career focus
+ */
+export type PostGradGoal = 'JOB_PLACEMENT' | 'GRADUATE_SCHOOL' | 'ENTREPRENEURSHIP' | 'UNDECIDED';
+
+/**
+ * English proficiency test type
+ */
+export type EnglishTestType = 'TOEFL' | 'DUOLINGO' | 'IELTS';
+
 // ============================================================================
 // User Profile Types
 // ============================================================================
@@ -22,21 +47,66 @@ export type CollegeLabel = 'Reach' | 'Target' | 'Safety';
  * Request body for creating a new user profile
  */
 export interface UserProfileCreate {
-  /** Student's citizenship/nationality (2-100 chars) */
-  nationality: string;
+  /** Student's citizenship/residency status (required) */
+  citizenshipStatus: CitizenshipStatus;
+  /** Country of citizenship (optional context) */
+  nationality?: string;
   /** GPA on 4.0 scale (0.0 - 4.0) */
   gpa: number;
   /** Intended major/field of study (2-100 chars) */
   major: string;
+  /** SAT score (400-1600) */
+  satScore?: number;
+  /** ACT score (1-36) */
+  actScore?: number;
+  /** State for in-state tuition (US residents only) */
+  stateOfResidence?: string;
+  /** Income tier for aid estimation */
+  householdIncomeTier?: HouseholdIncomeTier;
+  /** TOEFL/IELTS score (internationals) */
+  englishProficiencyScore?: number;
+  /** Preferred campus environment */
+  campusVibe?: CampusVibe;
+  /** Pursuing athletic recruitment */
+  isStudentAthlete?: boolean;
+  /** Has family alumni connections */
+  hasLegacyStatus?: boolean;
+  /** Universities with legacy status */
+  legacyUniversities?: string[];
+  /** Post-graduation career focus */
+  postGradGoal?: PostGradGoal;
+  /** First-generation college student */
+  isFirstGen?: boolean;
+  /** Type of English proficiency test */
+  englishTestType?: EnglishTestType;
+  /** Number of AP classes taken */
+  apClassCount?: number;
+  /** List of AP subjects */
+  apClasses?: string[];
 }
 
 /**
  * Request body for updating an existing profile (partial)
  */
 export interface UserProfileUpdate {
+  citizenshipStatus?: CitizenshipStatus;
   nationality?: string;
   gpa?: number;
   major?: string;
+  satScore?: number;
+  actScore?: number;
+  stateOfResidence?: string;
+  householdIncomeTier?: HouseholdIncomeTier;
+  englishProficiencyScore?: number;
+  campusVibe?: CampusVibe;
+  isStudentAthlete?: boolean;
+  hasLegacyStatus?: boolean;
+  legacyUniversities?: string[];
+  postGradGoal?: PostGradGoal;
+  isFirstGen?: boolean;
+  englishTestType?: EnglishTestType;
+  apClassCount?: number;
+  apClasses?: string[];
 }
 
 /**
@@ -45,9 +115,25 @@ export interface UserProfileUpdate {
 export interface UserProfile {
   id: string;
   userId: string;
-  nationality: string;
+  /** Student's citizenship/residency status */
+  citizenshipStatus?: CitizenshipStatus;
+  nationality?: string;
   gpa: number;
   major: string;
+  satScore?: number;
+  actScore?: number;
+  stateOfResidence?: string;
+  householdIncomeTier?: HouseholdIncomeTier;
+  englishProficiencyScore?: number;
+  campusVibe?: CampusVibe;
+  isStudentAthlete: boolean;
+  hasLegacyStatus: boolean;
+  legacyUniversities?: string[];
+  postGradGoal?: PostGradGoal;
+  isFirstGen: boolean;
+  englishTestType?: EnglishTestType;
+  apClassCount?: number;
+  apClasses?: string[];
   createdAt: string;
   updatedAt: string;
 }

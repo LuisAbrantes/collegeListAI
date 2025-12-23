@@ -21,7 +21,7 @@ export function Sidebar({ userProfile, onSignOut }: SidebarProps) {
     <aside className="w-64 h-screen flex flex-col bg-zinc-950 border-r border-white/10 shrink-0">
       {/* App Header */}
       <div className="p-6">
-        <h1 className="text-lg font-semibold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent m-0">
+        <h1 className="text-lg font-semibold text-white m-0">
           College List AI
         </h1>
       </div>
@@ -55,8 +55,8 @@ export function Sidebar({ userProfile, onSignOut }: SidebarProps) {
       {/* User Section */}
       <div className="p-4 border-t border-white/10">
         <div className="flex items-center gap-3 mb-4 px-2">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white">
-            {userProfile.nationality.slice(0, 2).toUpperCase()}
+          <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-xs font-bold text-white">
+            {(userProfile.nationality || 'US').slice(0, 2).toUpperCase()}
           </div>
           <div className="flex-1 overflow-hidden">
             <p className="text-sm font-medium text-white truncate m-0">

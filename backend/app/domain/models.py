@@ -19,25 +19,106 @@ class CollegeLabel(str, Enum):
     SAFETY = "Safety"
 
 
+class CitizenshipStatus(str, Enum):
+    """Student citizenship/residency status for financial aid determination."""
+    US_CITIZEN = "US_CITIZEN"
+    PERMANENT_RESIDENT = "PERMANENT_RESIDENT"
+    INTERNATIONAL = "INTERNATIONAL"
+    DACA = "DACA"
+
+
+class HouseholdIncomeTier(str, Enum):
+    """Income tier for financial aid estimation."""
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+
+
+class CampusVibe(str, Enum):
+    """Preferred campus environment type."""
+    URBAN = "URBAN"
+    SUBURBAN = "SUBURBAN"
+    RURAL = "RURAL"
+
+
+class PostGradGoal(str, Enum):
+    """Post-graduation career focus."""
+    JOB_PLACEMENT = "JOB_PLACEMENT"
+    GRADUATE_SCHOOL = "GRADUATE_SCHOOL"
+    ENTREPRENEURSHIP = "ENTREPRENEURSHIP"
+    UNDECIDED = "UNDECIDED"
+
+
 class UserProfileCreate(BaseModel):
     """Schema for creating a new user profile."""
-    nationality: str = Field(..., min_length=2, max_length=100, description="Student's citizenship/nationality")
+    # Core identification
+    citizenship_status: CitizenshipStatus = Field(..., description="Student citizenship/residency status")
+    nationality: Optional[str] = Field(None, min_length=2, max_length=100, description="Country of citizenship (optional context)")
+    
+    # Academic metrics
     gpa: float = Field(..., ge=0.0, le=4.0, description="GPA on 4.0 scale")
     major: str = Field(..., min_length=2, max_length=100, description="Intended major/field of study")
+    sat_score: Optional[int] = Field(None, ge=400, le=1600, description="SAT score")
+    act_score: Optional[int] = Field(None, ge=1, le=36, description="ACT score")
+    
+    # US-specific fields
+    state_of_residence: Optional[str] = Field(None, max_length=50, description="State for in-state tuition (US residents only)")
+    
+    # Financial info
+    household_income_tier: Optional[HouseholdIncomeTier] = Field(None, description="Income tier for aid estimation")
+    
+    # International-specific
+    english_proficiency_score: Optional[int] = Field(None, ge=0, le=120, description="TOEFL/IELTS score (internationals)")
+    
+    # Fit factors
+    campus_vibe: Optional[CampusVibe] = Field(None, description="Preferred campus environment")
+    is_student_athlete: bool = Field(False, description="Pursuing athletic recruitment")
+    has_legacy_status: bool = Field(False, description="Has family alumni connections")
+    legacy_universities: Optional[List[str]] = Field(None, description="Universities with legacy status")
+    post_grad_goal: Optional[PostGradGoal] = Field(None, description="Post-graduation career focus")
 
-    @field_validator("nationality", "major")
+    @field_validator("major")
     @classmethod
-    def validate_not_empty(cls, v: str) -> str:
+    def validate_major_not_empty(cls, v: str) -> str:
         if not v.strip():
-            raise ValueError("Field cannot be empty or whitespace only")
+            raise ValueError("Major cannot be empty or whitespace only")
         return v.strip()
+    
+    @field_validator("nationality")
+    @classmethod
+    def validate_nationality_if_provided(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("Nationality cannot be empty if provided")
+        return v.strip() if v else v
 
 
 class UserProfileUpdate(BaseModel):
     """Schema for updating an existing user profile. All fields optional."""
+    # Core identification
+    citizenship_status: Optional[CitizenshipStatus] = None
     nationality: Optional[str] = Field(None, min_length=2, max_length=100)
+    
+    # Academic metrics
     gpa: Optional[float] = Field(None, ge=0.0, le=4.0)
     major: Optional[str] = Field(None, min_length=2, max_length=100)
+    sat_score: Optional[int] = Field(None, ge=400, le=1600)
+    act_score: Optional[int] = Field(None, ge=1, le=36)
+    
+    # US-specific fields
+    state_of_residence: Optional[str] = Field(None, max_length=50)
+    
+    # Financial info
+    household_income_tier: Optional[HouseholdIncomeTier] = None
+    
+    # International-specific
+    english_proficiency_score: Optional[int] = Field(None, ge=0, le=120)
+    
+    # Fit factors
+    campus_vibe: Optional[CampusVibe] = None
+    is_student_athlete: Optional[bool] = None
+    has_legacy_status: Optional[bool] = None
+    legacy_universities: Optional[List[str]] = None
+    post_grad_goal: Optional[PostGradGoal] = None
 
     @field_validator("nationality", "major")
     @classmethod
@@ -51,9 +132,33 @@ class UserProfile(BaseModel):
     """Complete user profile entity from database."""
     id: uuid.UUID
     user_id: uuid.UUID
-    nationality: str
+    
+    # Core identification
+    citizenship_status: Optional[CitizenshipStatus] = None
+    nationality: Optional[str] = None
+    
+    # Academic metrics
     gpa: float
     major: str
+    sat_score: Optional[int] = None
+    act_score: Optional[int] = None
+    
+    # US-specific fields
+    state_of_residence: Optional[str] = None
+    
+    # Financial info
+    household_income_tier: Optional[HouseholdIncomeTier] = None
+    
+    # International-specific
+    english_proficiency_score: Optional[int] = None
+    
+    # Fit factors
+    campus_vibe: Optional[CampusVibe] = None
+    is_student_athlete: bool = False
+    has_legacy_status: bool = False
+    legacy_universities: Optional[List[str]] = None
+    post_grad_goal: Optional[PostGradGoal] = None
+    
     created_at: datetime
     updated_at: datetime
 

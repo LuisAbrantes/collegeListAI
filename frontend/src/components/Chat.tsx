@@ -32,9 +32,24 @@ export function Chat({ profile }: ChatProps) {
     if (!input.trim() || isStreaming) return;
 
     sendMessage(input.trim(), {
-      nationality: profile.nationality,
+      citizenshipStatus: profile.citizenshipStatus,
+      nationality: profile.nationality || undefined,
       gpa: profile.gpa,
       major: profile.major,
+      satScore: profile.satScore,
+      actScore: profile.actScore,
+      stateOfResidence: profile.stateOfResidence,
+      householdIncomeTier: profile.householdIncomeTier,
+      englishProficiencyScore: profile.englishProficiencyScore,
+      englishTestType: profile.englishTestType,
+      campusVibe: profile.campusVibe,
+      isStudentAthlete: profile.isStudentAthlete,
+      hasLegacyStatus: profile.hasLegacyStatus,
+      legacyUniversities: profile.legacyUniversities,
+      postGradGoal: profile.postGradGoal,
+      isFirstGen: profile.isFirstGen,
+      apClassCount: profile.apClassCount,
+      apClasses: profile.apClasses,
     }, { mode: viewMode });
     
     setInput('');
