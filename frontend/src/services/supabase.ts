@@ -115,6 +115,7 @@ export const profileService = {
       data: {
         id: data.id,
         userId: data.id,
+        name: data.name,
         citizenshipStatus: data.citizenship_status,
         nationality: data.nationality,
         gpa: data.gpa,
@@ -161,6 +162,7 @@ export const profileService = {
       .from('profiles')
       .insert({
         id: user.id,
+        name: profile.name,
         citizenship_status: profile.citizenshipStatus,
         nationality: profile.nationality,
         gpa: profile.gpa,
@@ -199,6 +201,7 @@ export const profileService = {
       data: {
         id: data.id,
         userId: data.id,
+        name: data.name,
         citizenshipStatus: data.citizenship_status,
         nationality: data.nationality,
         gpa: data.gpa,
@@ -246,6 +249,9 @@ export const profileService = {
     };
 
     // Handle string fields - convert empty strings to null for enum fields
+    if (updates.name !== undefined) {
+      updateData.name = updates.name || null;
+    }
     if (updates.citizenshipStatus !== undefined) {
       updateData.citizenship_status = updates.citizenshipStatus || null;
     }
@@ -305,6 +311,7 @@ export const profileService = {
       data: {
         id: data.id,
         userId: data.id,
+        name: data.name,
         citizenshipStatus: data.citizenship_status,
         nationality: data.nationality,
         gpa: data.gpa,
