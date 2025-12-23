@@ -154,16 +154,16 @@ async def analyzer_node(state: RecommendationAgentState) -> Dict[str, Any]:
         # In production, this would use NER or structured extraction
         logger.info(f"Analyzer processed {len(state.get('research_results', []))} research results")
         
-        stream_message = ""
+        # Log progress (not streamed to user)
         if state["student_type"] == "domestic":
-            stream_message = f"📊 Analyzing options for domestic student in {state['profile'].get('state_of_residence', 'US')}...\n\n"
+            logger.info(f"Analyzing options for domestic student in {state['profile'].get('state_of_residence', 'US')}")
         else:
-            stream_message = f"📊 Analyzing options for international student from {state['profile'].get('nationality', 'abroad')}...\n\n"
+            logger.info(f"Analyzing options for international student from {state['profile'].get('nationality', 'abroad')}")
         
         return {
             "financial_aid_context": financial_context,
             "matched_universities": matched_universities,
-            "stream_content": [stream_message]
+            "stream_content": []  # Reserved for final recommendations only
         }
         
     except Exception as e:
@@ -172,5 +172,5 @@ async def analyzer_node(state: RecommendationAgentState) -> Dict[str, Any]:
             "error": f"Analysis failed: {str(e)}",
             "financial_aid_context": "",
             "matched_universities": [],
-            "stream_content": ["⚠️ Analysis encountered an issue...\n\n"]
+            "stream_content": []  # Don't stream error status
         }

@@ -189,16 +189,14 @@ Return structured information with sources."""
             f"{len(search_queries_used)} queries for {state['student_type']} student"
         )
         
-        stream_msg = (
-            f"🔍 Researching {major} programs for you...\n"
-            f"📚 Checking major rankings, hidden gems, and financial aid options\n\n"
-        )
+        # Log progress (not streamed - keeps response clean)
+        logger.info(f"Researching {major} programs...")
         
         return {
             "research_results": [research_result],
             "search_queries": search_queries_used,
             "grounding_sources": sources,
-            "stream_content": [stream_msg]
+            "stream_content": []  # Reserved for final recommendations only
         }
         
     except Exception as e:
@@ -208,6 +206,6 @@ Return structured information with sources."""
             "research_results": [],
             "search_queries": [],
             "grounding_sources": [],
-            "stream_content": ["⚠️ Research encountered an issue...\n\n"]
+            "stream_content": []  # Don't stream error status
         }
 

@@ -41,6 +41,10 @@ async def router_node(state: RecommendationAgentState) -> Dict[str, Any]:
     This is the first node in the workflow. It examines the student
     profile and sets the student_type for conditional branching.
     
+    Note: We intentionally don't add greeting to stream_content here.
+    The stream_content is reserved for the final recommendation output only.
+    This prevents "thinking" text from appearing in the response.
+    
     Args:
         state: Current agent state
         
@@ -53,19 +57,19 @@ async def router_node(state: RecommendationAgentState) -> Dict[str, Any]:
     
     logger.info(f"Router: Student classified as {student_type}")
     
-    # Build initial stream message
+    # Log context for debugging (not streamed to user)
     if is_domestic:
-        greeting = f"👋 Hello! I'll help you find great universities as a **domestic student**"
-        if profile.get("state_of_residence"):
-            greeting += f" from **{profile['state_of_residence']}**"
-        greeting += ".\n\n"
+        state_res = profile.get("state_of_residence", "US")
+        logger.info(f"Router: Domestic student from {state_res}")
     else:
-        nationality = profile.get("nationality", "your country")
-        greeting = f"👋 Hello! I'll help you find universities that welcome **international students from {nationality}**.\n\n"
+        nationality = profile.get("nationality", "unknown")
+        logger.info(f"Router: International student from {nationality}")
     
+    # Return only the routing decision - no stream content
+    # This prevents "thinking" text from appearing in response
     return {
         "student_type": student_type,
-        "stream_content": [greeting]
+        "stream_content": []  # Reserved for final recommendations only
     }
 
 
