@@ -256,19 +256,36 @@ Respond in JSON format:
     ) -> AsyncGenerator[str, None]:
         """
         Stream recommendations via SSE with search grounding.
+        Uses conversational format for better streaming UX.
         """
         try:
-            user_context = self._build_user_context(
-                nationality, gpa, major, excluded_colleges
-            )
-            full_prompt = f"{self._system_prompt}\n\n{user_context}\n\n## User Query\n{user_query}"
-            
+            # Build a concise, focused prompt for college list creation
+            streaming_prompt = f"""You are a college admissions consultant. Create a focused college list based on the student's profile.
+
+**Student:** {nationality} student, GPA {gpa}/4.0, Major: {major}
+{f"**Exclude:** {', '.join(excluded_colleges)}" if excluded_colleges else ""}
+
+**Query:** {user_query}
+
+**Instructions:**
+- Provide 3-5 universities maximum
+- For each: Name, Reach/Target/Safety label, 1-2 sentence fit explanation
+- Mention financial aid ONLY if specifically asked
+- Be concise and direct
+- Use Google Search to verify current info
+
+Format each university as:
+**[University Name]** (Reach/Target/Safety)
+Brief explanation of fit and key programs.
+"""
+
             # Use streaming with search grounding
             response = self.client.models.generate_content_stream(
                 model=self.DEFAULT_MODEL,
-                contents=full_prompt,
+                contents=streaming_prompt,
                 config=types.GenerateContentConfig(
-                    temperature=self.TEMPERATURE,
+                    temperature=0.6,  # Lower for more focused responses
+                    max_output_tokens=1500,  # Limit response length
                     tools=[types.Tool(google_search=types.GoogleSearch())]
                 )
             )

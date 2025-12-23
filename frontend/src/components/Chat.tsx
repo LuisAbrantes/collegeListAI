@@ -9,6 +9,8 @@ import type { Message } from '../hooks/useChat';
 import type { UserProfile } from '../types/api';
 import { CollegeCard } from './CollegeCard';
 import { motion, AnimatePresence } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface ChatProps {
   profile: UserProfile;
@@ -141,19 +143,37 @@ function MessageItem({ message }: { message: Message }) {
       animate={{ opacity: 1, y: 0 }}
       className={`my-6 flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
     >
-      <div className={`max-w-[85%] ${
+      <div className={`${isUser ? 'max-w-[85%]' : 'max-w-[95%]'} ${
         isUser 
           ? 'py-3 px-5 bg-white/10 rounded-2xl text-zinc-100' 
           : 'p-0 text-zinc-100'
       }`}>
         {!isUser && (
-           <span className="block text-xs text-zinc-500 mb-2 font-mono uppercase tracking-wider">
+           <span className="block text-xs text-zinc-500 mb-3 font-mono uppercase tracking-wider">
              AI ADVISOR
            </span>
         )}
         
-        {/* Render clean text */}
-        <div className="whitespace-pre-wrap leading-relaxed">{message.content}</div>
+        
+        {/* Render message content */}
+        {isUser ? (
+          <div className="whitespace-pre-wrap leading-relaxed">{message.content}</div>
+        ) : (
+          <div className="prose prose-invert prose-sm max-w-none
+            prose-headings:text-zinc-100 prose-headings:font-bold prose-headings:mt-6 prose-headings:mb-3
+            prose-p:text-zinc-300 prose-p:my-3 prose-p:leading-relaxed
+            prose-a:text-blue-400 prose-a:no-underline hover:prose-a:underline
+            prose-strong:text-white prose-strong:font-semibold
+            prose-code:text-zinc-300 prose-code:bg-white/5 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
+            prose-pre:bg-white/5 prose-pre:border prose-pre:border-white/10 prose-pre:p-4 prose-pre:my-4
+            prose-ul:text-zinc-300 prose-ul:my-4 prose-ul:space-y-2
+            prose-ol:text-zinc-300 prose-ol:my-4 prose-ol:space-y-2
+            prose-li:my-1.5 prose-li:leading-relaxed">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {message.content}
+            </ReactMarkdown>
+          </div>
+        )}
 
         {/* Sources */}
         {!isUser && message.sources && message.sources.length > 0 && (
