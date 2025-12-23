@@ -98,7 +98,7 @@ export const profileService = {
       .from('profiles')
       .select('*')
       .eq('id', user.id)
-      .single();
+      .maybeSingle(); // Use maybeSingle() to avoid 406 when no profile exists
 
     if (error) {
       return handleError(error);

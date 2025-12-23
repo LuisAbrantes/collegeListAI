@@ -1,68 +1,23 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
+@layer base {
+  body {
+    @apply bg-zinc-950 text-zinc-100 font-sans antialiased min-h-screen bg-mesh bg-fixed;
   }
-  a:hover {
-    color: #747bff;
+}
+
+@layer utilities {
+  .glass-card {
+    @apply bg-zinc-900/60 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl;
   }
-  button {
-    background-color: #f9f9f9;
+  
+  .glass-input {
+    @apply w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-zinc-100 font-sans transition-all focus:outline-none focus:border-white/20 focus:bg-white/10 placeholder:text-zinc-600;
+  }
+
+  .btn-primary {
+    @apply px-4 py-3 rounded-lg font-semibold bg-zinc-100 text-zinc-950 hover:bg-white hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed;
   }
 }

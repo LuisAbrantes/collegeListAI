@@ -80,12 +80,13 @@ class GeminiService:
     
     def _initialize(self) -> None:
         """Initialize Gemini client."""
-        api_key = os.getenv("GOOGLE_API_KEY")
+        # Accept both GOOGLE_API_KEY and GEMINI_API_KEY for flexibility
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         
         if not api_key:
             raise ConfigurationError(
-                "Missing GOOGLE_API_KEY environment variable",
-                missing_keys=["GOOGLE_API_KEY"]
+                "Missing GOOGLE_API_KEY or GEMINI_API_KEY environment variable",
+                missing_keys=["GOOGLE_API_KEY", "GEMINI_API_KEY"]
             )
         
         # Initialize the new genai client
