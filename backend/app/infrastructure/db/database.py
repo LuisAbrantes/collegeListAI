@@ -60,21 +60,11 @@ class DatabaseManager:
         """
         Initialize async engine with optimal pooling configuration.
         
-        Uses NullPool in testing/development if no DATABASE_URL provided.
-        Uses QueuePool with configurable size in production.
+        Derives PostgreSQL connection URL from SUPABASE_URL.
+        Format: https://[project-ref].supabase.co -> postgresql+asyncpg://...
         """
-        if not settings.database_url:
-            raise ValueError(
-                "DATABASE_URL environment variable is required for SQLModel. "
-                "Please add it to your .env file using Supabase's transaction pooler URL."
-            )
-        
-        # Ensure we use asyncpg driver
-        database_url = settings.database_url
-        if database_url.startswith("postgresql://"):
-            database_url = database_url.replace(
-                "postgresql://", "postgresql+asyncpg://", 1
-            )
+        # Derive database URL from Supabase URL
+        database_url = self._get_database_url_from_supabase()
         
         self._engine = create_async_engine(
             database_url,
@@ -91,6 +81,48 @@ class DatabaseManager:
             expire_on_commit=False,
             autoflush=False,
         )
+    
+    def _get_database_url_from_supabase(self) -> str:
+        """
+        Get PostgreSQL connection URL for SQLModel.
+        
+        Derives from SUPABASE_URL + SUPABASE_PASSWORD, or uses DATABASE_URL if provided.
+        """
+        import re
+        from urllib.parse import quote_plus
+        
+        # Use explicit DATABASE_URL if provided
+        if settings.database_url:
+            database_url = settings.database_url
+            if database_url.startswith("postgresql://"):
+                database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            elif database_url.startswith("postgres://"):
+                database_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+            return database_url
+        
+        # Derive from SUPABASE_URL + SUPABASE_PASSWORD
+        if not settings.supabase_url or not settings.supabase_password:
+            raise ValueError(
+                "Either DATABASE_URL or (SUPABASE_URL + SUPABASE_PASSWORD) is required. "
+                "Add SUPABASE_PASSWORD to your .env file."
+            )
+        
+        # Extract project reference from Supabase URL
+        match = re.match(r'https?://([^.]+)\.supabase\.co', settings.supabase_url)
+        if not match:
+            raise ValueError(f"Invalid SUPABASE_URL format: {settings.supabase_url}")
+        
+        project_ref = match.group(1)
+        password = quote_plus(settings.supabase_password)
+        
+        # Use direct database connection (not pooler) for migrations
+        # Format: postgres://postgres.[ref]:[password]@db.[ref].supabase.co:5432/postgres
+        database_url = (
+            f"postgresql+asyncpg://postgres:{password}"
+            f"@db.{project_ref}.supabase.co:5432/postgres"
+        )
+        
+        return database_url
     
     async def create_tables(self) -> None:
         """Create all tables from SQLModel metadata."""

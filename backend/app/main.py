@@ -34,8 +34,8 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"College List AI Backend starting in {settings.environment} mode...")
     
-    # Initialize SQLModel database if URL is configured
-    if settings.database_url:
+    # Initialize SQLModel database (uses SUPABASE_URL)
+    if settings.supabase_url:
         try:
             from app.infrastructure.db.database import init_db, close_db
             await init_db()
@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown
-    if settings.database_url:
+    if settings.supabase_url:
         try:
             from app.infrastructure.db.database import close_db
             await close_db()

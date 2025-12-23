@@ -80,18 +80,39 @@ def include_object(object, name, type_, reflected, compare_to):
 
 
 def get_url():
-    """Get database URL from settings or environment."""
-    url = settings.database_url
-    if not url:
-        url = os.getenv("DATABASE_URL")
-    if not url:
-        raise ValueError("DATABASE_URL environment variable is required")
+    """Get database URL from settings."""
+    import re
+    from urllib.parse import quote_plus
     
-    # Convert to async driver if needed
-    if url.startswith("postgresql://"):
-        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    # Use explicit DATABASE_URL if provided
+    if settings.database_url:
+        database_url = settings.database_url
+        if database_url.startswith("postgresql://"):
+            database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+        return database_url
     
-    return url
+    # Derive from SUPABASE_URL + SUPABASE_PASSWORD
+    if not settings.supabase_url or not settings.supabase_password:
+        raise ValueError(
+            "Either DATABASE_URL or (SUPABASE_URL + SUPABASE_PASSWORD) is required"
+        )
+    
+    match = re.match(r'https?://([^.]+)\.supabase\.co', settings.supabase_url)
+    if not match:
+        raise ValueError(f"Invalid SUPABASE_URL format: {settings.supabase_url}")
+    
+    project_ref = match.group(1)
+    password = quote_plus(settings.supabase_password)
+    
+    # Use direct database connection for migrations
+    database_url = (
+        f"postgresql+asyncpg://postgres:{password}"
+        f"@db.{project_ref}.supabase.co:5432/postgres"
+    )
+    
+    return database_url
 
 
 def run_migrations_offline() -> None:

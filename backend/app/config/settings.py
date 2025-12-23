@@ -60,7 +60,9 @@ class Settings(BaseSettings):
     retry_max_delay: float = 10.0
     
     # Database Configuration (SQLModel/SQLAlchemy)
-    database_url: Optional[str] = None
+    # Uses SUPABASE_URL + SUPABASE_PASSWORD to construct connection string
+    supabase_password: Optional[str] = None
+    database_url: Optional[str] = None  # Optional override
     database_pool_size: int = 5
     database_max_overflow: int = 10
     database_pool_timeout: int = 30
