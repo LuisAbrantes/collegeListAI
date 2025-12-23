@@ -2,7 +2,12 @@
 Academic Fit Factor
 
 Calculates how well the student's academic profile matches the university.
-Compares GPA and test scores to university percentiles.
+Uses Z-score comparison for mathematically sound scoring.
+
+REFACTORED: Uses Z-score approach instead of linear penalty.
+- Being at median = 80% (competitive candidate)
+- Above median = higher scores
+- Below median = lower scores, but not harsh penalties
 """
 
 from app.domain.scoring.interfaces import (
@@ -14,14 +19,21 @@ from app.domain.scoring.interfaces import (
 
 class AcademicFitFactor(BaseScoringFactor):
     """
-    Academic fit scoring factor.
+    Academic fit scoring factor using Z-score comparison.
     
     Weight: 30% base
     
     Calculates based on:
-    - GPA relative to university median
+    - GPA relative to university median (Z-score approach)
     - SAT/ACT relative to 25th-75th percentile range
+    
+    Key insight: A student at 3.8 GPA with school median 3.9
+    should score ~80% (competitive), NOT 49% (penalty).
     """
+    
+    # Assumed standard deviations (typical for admitted students)
+    ASSUMED_GPA_STDEV = 0.12
+    ASSUMED_SAT_STDEV = 80  # Points
     
     @property
     def name(self) -> str:
@@ -37,33 +49,33 @@ class AcademicFitFactor(BaseScoringFactor):
         university: UniversityData
     ) -> float:
         """
-        Calculate academic fit score.
+        Calculate academic fit score using Z-scores.
         
         Returns 0-100 score where:
-        - 100 = student well above university stats
-        - 70-85 = solid match
-        - 50-70 = competitive
-        - <50 = reach territory
+        - 90+ = student well above university stats (overqualified)
+        - 75-90 = strong match (competitive)
+        - 60-75 = moderate match (within range)
+        - <60 = reach territory (below typical admits)
         """
         scores = []
         
-        # GPA component
+        # GPA component (Z-score based)
         gpa_score = self._calculate_gpa_fit(context.gpa, university)
         if gpa_score is not None:
             scores.append(gpa_score)
         
-        # Test score component (SAT or ACT)
+        # Test score component (percentile-based)
         test_score = self._calculate_test_fit(context, university)
         if test_score is not None:
             scores.append(test_score)
         
         # If no data available, return neutral score
         if not scores:
-            return 70.0  # Neutral when no data
+            return 75.0  # Neutral when no data
         
-        # Weight GPA slightly more than tests (60/40)
+        # Weight GPA slightly more than tests (55/45)
         if len(scores) == 2:
-            return scores[0] * 0.6 + scores[1] * 0.4
+            return scores[0] * 0.55 + scores[1] * 0.45
         
         return scores[0]
     
@@ -72,34 +84,45 @@ class AcademicFitFactor(BaseScoringFactor):
         student_gpa: float,
         university: UniversityData
     ) -> float | None:
-        """Calculate GPA fit score."""
+        """
+        Calculate GPA fit score using Z-score comparison.
+        
+        Z-score formula: z = (student_gpa - median_gpa) / std_dev
+        
+        Score mapping:
+        - Z = 0 (at median) → 80% (competitive candidate)
+        - Z = +1 (above median) → 92%
+        - Z = -1 (slightly below) → 68%
+        - Z = -2 (significantly below) → 56%
+        """
         if university.median_gpa is None:
             return None
         
         median = university.median_gpa
-        
-        # Score based on distance from median
-        # Above median: bonus points
-        # At median: 75 points
-        # Below median: penalty
-        
         diff = student_gpa - median
+        z_score = diff / self.ASSUMED_GPA_STDEV
         
-        if diff >= 0.3:
-            return min(100, 85 + (diff - 0.3) * 50)  # Well above
-        elif diff >= 0:
-            return 75 + diff * 33  # Slightly above to at median
-        elif diff >= -0.3:
-            return 75 + diff * 50  # Slightly below median
-        else:
-            return max(30, 60 + diff * 30)  # Significantly below
+        # Map Z-score to 0-100 range
+        # Base of 80 at median, +12 per standard deviation
+        base_score = 80 + (z_score * 12)
+        
+        # Clamp to reasonable range
+        return max(35, min(98, base_score))
     
     def _calculate_test_fit(
         self,
         context: StudentContext,
         university: UniversityData
     ) -> float | None:
-        """Calculate test score fit (SAT or ACT)."""
+        """
+        Calculate test score fit using percentile position.
+        
+        Uses the 25th-75th percentile range to determine position:
+        - At 75th percentile → 85%
+        - At 50th percentile (midpoint) → 75%
+        - At 25th percentile → 65%
+        - Below 25th → decreasing rapidly
+        """
         student_sat = context.sat_score
         
         # Convert ACT to SAT if needed
@@ -116,26 +139,29 @@ class AcademicFitFactor(BaseScoringFactor):
         sat_75 = university.sat_75th
         sat_mid = (sat_25 + sat_75) / 2
         
+        # Calculate percentile position within the school's range
         if student_sat >= sat_75:
-            # Above 75th percentile
-            excess = student_sat - sat_75
-            return min(100, 85 + excess / 20)
+            # Above 75th percentile - strong candidate
+            excess_z = (student_sat - sat_75) / self.ASSUMED_SAT_STDEV
+            return min(98, 85 + excess_z * 6)
+        
         elif student_sat >= sat_mid:
-            # Between midpoint and 75th
+            # Between midpoint and 75th (50th-75th percentile)
             ratio = (student_sat - sat_mid) / (sat_75 - sat_mid)
-            return 70 + ratio * 15
+            return 75 + ratio * 10  # 75 to 85
+        
         elif student_sat >= sat_25:
-            # Between 25th and midpoint
+            # Between 25th and midpoint (25th-50th percentile)
             ratio = (student_sat - sat_25) / (sat_mid - sat_25)
-            return 55 + ratio * 15
+            return 65 + ratio * 10  # 65 to 75
+        
         else:
-            # Below 25th percentile
-            deficit = sat_25 - student_sat
-            return max(20, 55 - deficit / 10)
+            # Below 25th percentile - reach territory
+            deficit_z = (sat_25 - student_sat) / self.ASSUMED_SAT_STDEV
+            return max(35, 65 - deficit_z * 10)
     
     def _act_to_sat(self, act_score: int) -> int:
         """Convert ACT to SAT equivalent."""
-        # Approximate conversion table
         conversions = {
             36: 1600, 35: 1560, 34: 1520, 33: 1490,
             32: 1450, 31: 1420, 30: 1390, 29: 1350,

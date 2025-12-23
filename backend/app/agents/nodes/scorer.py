@@ -68,33 +68,23 @@ def parse_universities_from_research(
     
     # Known universities with REAL data for accurate scoring
     # Data sources: 2024 Common Data Sets, US News, NCES
+    # ANTI-BIAS: Includes Hidden Gems, LACs, Regional Powerhouses, State Universities
     KNOWN_UNIVERSITIES = {
-        # REACH schools (acceptance < 15%)
+        # =========== REACH SCHOOLS (acceptance < 15%) ===========
         "Massachusetts Institute of Technology": {
             "acceptance_rate": 0.04, "median_gpa": 3.97, "sat_25th": 1520, "sat_75th": 1580,
-            "campus_setting": "URBAN", "need_blind_international": True
-        },
-        "Stanford University": {
-            "acceptance_rate": 0.04, "median_gpa": 3.96, "sat_25th": 1510, "sat_75th": 1570,
-            "campus_setting": "SUBURBAN", "need_blind_international": False
-        },
-        "Harvard University": {
-            "acceptance_rate": 0.03, "median_gpa": 3.98, "sat_25th": 1480, "sat_75th": 1580,
             "campus_setting": "URBAN", "need_blind_international": True
         },
         "Carnegie Mellon University": {
             "acceptance_rate": 0.11, "median_gpa": 3.90, "sat_25th": 1500, "sat_75th": 1560,
             "campus_setting": "URBAN", "need_blind_international": False
         },
-        "Princeton University": {
-            "acceptance_rate": 0.04, "median_gpa": 3.95, "sat_25th": 1510, "sat_75th": 1570,
-            "campus_setting": "SUBURBAN", "need_blind_international": True
+        "Harvey Mudd College": {  # Liberal Arts - Excellent CS
+            "acceptance_rate": 0.13, "median_gpa": 3.95, "sat_25th": 1480, "sat_75th": 1560,
+            "campus_setting": "SUBURBAN", "need_blind_international": False
         },
-        # TARGET schools (acceptance 15-40%)
-        "University of California, Berkeley": {
-            "acceptance_rate": 0.12, "median_gpa": 3.92, "sat_25th": 1410, "sat_75th": 1530,
-            "campus_setting": "URBAN", "need_blind_international": False
-        },
+        
+        # =========== TARGET SCHOOLS (acceptance 15-40%) ===========
         "Georgia Institute of Technology": {
             "acceptance_rate": 0.17, "median_gpa": 3.85, "sat_25th": 1420, "sat_75th": 1540,
             "campus_setting": "URBAN", "need_blind_international": False
@@ -103,29 +93,34 @@ def parse_universities_from_research(
             "acceptance_rate": 0.18, "median_gpa": 3.88, "sat_25th": 1380, "sat_75th": 1520,
             "campus_setting": "SUBURBAN", "need_blind_international": False
         },
-        "University of Southern California": {
-            "acceptance_rate": 0.12, "median_gpa": 3.85, "sat_25th": 1430, "sat_75th": 1540,
+        "Grinnell College": {  # Liberal Arts - Need-Blind Intl
+            "acceptance_rate": 0.20, "median_gpa": 3.85, "sat_25th": 1360, "sat_75th": 1520,
+            "campus_setting": "RURAL", "need_blind_international": True
+        },
+        "Northeastern University": {  # Co-op Program
+            "acceptance_rate": 0.20, "median_gpa": 3.78, "sat_25th": 1390, "sat_75th": 1530,
             "campus_setting": "URBAN", "need_blind_international": False
         },
-        "University of Illinois Urbana-Champaign": {
-            "acceptance_rate": 0.45, "median_gpa": 3.78, "sat_25th": 1320, "sat_75th": 1500,
-            "campus_setting": "SUBURBAN", "need_blind_international": False
+        "Case Western Reserve University": {  # Regional Powerhouse
+            "acceptance_rate": 0.30, "median_gpa": 3.80, "sat_25th": 1360, "sat_75th": 1500,
+            "campus_setting": "URBAN", "need_blind_international": False
         },
         "University of Texas at Austin": {
             "acceptance_rate": 0.31, "median_gpa": 3.75, "sat_25th": 1290, "sat_75th": 1480,
             "campus_setting": "URBAN", "need_blind_international": False
         },
-        # SAFETY schools (acceptance > 40%)
-        "Purdue University": {
-            "acceptance_rate": 0.53, "median_gpa": 3.70, "sat_25th": 1230, "sat_75th": 1440,
+        "University of Rochester": {  # Hidden Gem - Need-Blind
+            "acceptance_rate": 0.39, "median_gpa": 3.78, "sat_25th": 1350, "sat_75th": 1510,
+            "campus_setting": "SUBURBAN", "need_blind_international": True
+        },
+        
+        # =========== SAFETY SCHOOLS (acceptance > 40%) ===========
+        "University of Maryland, College Park": {
+            "acceptance_rate": 0.44, "median_gpa": 3.75, "sat_25th": 1340, "sat_75th": 1490,
             "campus_setting": "SUBURBAN", "need_blind_international": False
         },
-        "Arizona State University": {
-            "acceptance_rate": 0.88, "median_gpa": 3.50, "sat_25th": 1120, "sat_75th": 1340,
-            "campus_setting": "URBAN", "need_blind_international": False
-        },
-        "Penn State University": {
-            "acceptance_rate": 0.55, "median_gpa": 3.62, "sat_25th": 1200, "sat_75th": 1380,
+        "University of Illinois Urbana-Champaign": {
+            "acceptance_rate": 0.45, "median_gpa": 3.78, "sat_25th": 1320, "sat_75th": 1500,
             "campus_setting": "SUBURBAN", "need_blind_international": False
         },
         "University of Washington": {
@@ -134,6 +129,26 @@ def parse_universities_from_research(
         },
         "University of Wisconsin-Madison": {
             "acceptance_rate": 0.49, "median_gpa": 3.72, "sat_25th": 1320, "sat_75th": 1480,
+            "campus_setting": "URBAN", "need_blind_international": False
+        },
+        "Purdue University": {
+            "acceptance_rate": 0.53, "median_gpa": 3.70, "sat_25th": 1230, "sat_75th": 1440,
+            "campus_setting": "SUBURBAN", "need_blind_international": False
+        },
+        "Virginia Tech": {  # Regional Powerhouse
+            "acceptance_rate": 0.57, "median_gpa": 3.72, "sat_25th": 1280, "sat_75th": 1440,
+            "campus_setting": "RURAL", "need_blind_international": False
+        },
+        "Rochester Institute of Technology": {  # Specialized Institute
+            "acceptance_rate": 0.67, "median_gpa": 3.65, "sat_25th": 1250, "sat_75th": 1430,
+            "campus_setting": "SUBURBAN", "need_blind_international": False
+        },
+        "University of Minnesota Twin Cities": {
+            "acceptance_rate": 0.75, "median_gpa": 3.60, "sat_25th": 1250, "sat_75th": 1440,
+            "campus_setting": "URBAN", "need_blind_international": False
+        },
+        "Arizona State University": {  # High acceptance, good programs
+            "acceptance_rate": 0.88, "median_gpa": 3.50, "sat_25th": 1120, "sat_75th": 1340,
             "campus_setting": "URBAN", "need_blind_international": False
         },
     }

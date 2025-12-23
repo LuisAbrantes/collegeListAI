@@ -22,10 +22,14 @@ def build_search_queries(state: RecommendationAgentState) -> List[str]:
     """
     Build multiple focused search queries for comprehensive coverage.
     
+    ANTI-BIAS: Explicitly requests Hidden Gems, Regional Powerhouses,
+    Liberal Arts Colleges, and State Universities - NOT just famous brands.
+    
     Returns queries for:
-    1. Major-specific rankings (universal major support)
-    2. Hidden gems / non-traditional schools
-    3. Financial aid for student type
+    1. Major-specific rankings (NOT Ivy League focused)
+    2. Hidden gems / regional powerhouses
+    3. Liberal Arts Colleges with strong programs
+    4. Financial aid for student type
     """
     profile = state["profile"]
     major = profile.get("major", "general studies")
@@ -34,30 +38,42 @@ def build_search_queries(state: RecommendationAgentState) -> List[str]:
     
     queries = []
     
-    # Query 1: Major-specific rankings (universal major support)
+    # Query 1: Hidden Gems (EXPLICITLY NOT famous brands)
     queries.append(
-        f"top universities {major} program rankings 2025 "
-        f"undergraduate best departments"
+        f"best {major} programs NOT ivy league NOT top 10 "
+        f"hidden gem universities excellent departments 2025"
     )
     
-    # Query 2: Hidden gems / non-traditional
+    # Query 2: Regional Powerhouses
     queries.append(
-        f"underrated universities excellent {major} program "
-        f"hidden gems lesser known colleges 2025"
+        f"regional universities strong {major} programs "
+        f"RIT Rochester Case Western Virginia Tech Purdue 2025"
+    )
+    
+    # Query 3: Liberal Arts Colleges (excellent for any major)
+    queries.append(
+        f"liberal arts colleges {major} programs "
+        f"Harvey Mudd Grinnell Pomona Williams Carleton 2025"
+    )
+    
+    # Query 4: State Universities Value
+    queries.append(
+        f"best public universities {major} "
+        f"value rankings industry placement 2025"
     )
     
     if is_domestic:
         state_res = profile.get("state_of_residence", "")
         income_tier = profile.get("household_income_tier", "MEDIUM")
         
-        # Query 3: State-specific options
+        # Query 5: State-specific options
         if state_res:
             queries.append(
                 f"best public universities {major} {state_res} "
                 f"in-state tuition 2025 acceptance rate"
             )
         
-        # Query 4: Financial aid based on income
+        # Query 6: Financial aid based on income
         if income_tier == "LOW":
             queries.append(
                 "universities full financial aid low income students "
@@ -72,16 +88,16 @@ def build_search_queries(state: RecommendationAgentState) -> List[str]:
         nationality = profile.get("nationality", "international")
         income_tier = profile.get("household_income_tier", "MEDIUM")
         
-        # Query 3: Need-blind for internationals
+        # Query 5: Need-blind for internationals
         if income_tier in ["LOW", "MEDIUM"]:
             queries.append(
                 "need-blind universities international students 2025 "
                 "full financial aid foreign students admission"
             )
         
-        # Query 4: Country-specific scholarships
+        # Query 6: Country-specific scholarships
         queries.append(
-            f"universities scholarships {nationality} students "
+            f"universities scholarships students from {nationality} "
             f"{major} international financial aid 2025"
         )
     

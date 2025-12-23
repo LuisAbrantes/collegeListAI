@@ -3,6 +3,11 @@ Label Classifier
 
 Classifies universities as Reach, Target, or Safety.
 Uses strict criteria based on acceptance rates and student stats.
+
+REFACTORED: New classification rules:
+- Safety: Student's GPA/SAT in TOP 25% of school's range AND acceptance rate > 35%
+- Reach: Acceptance rate < 15% OR student in BOTTOM 25% of stats
+- Target: Everything else
 """
 
 from app.domain.scoring.interfaces import (
@@ -14,12 +19,12 @@ from app.domain.scoring.interfaces import (
 
 class LabelClassifier:
     """
-    University label classifier.
+    University label classifier with refined probability formula.
     
-    Strict classification criteria:
-    - Reach: Acceptance Rate < 15% OR student stats below 25th percentile
-    - Target: Stats between 25th-75th percentile
-    - Safety: Stats above 75th percentile AND Acceptance Rate > 35%
+    New Classification Criteria:
+    - REACH: Acceptance Rate < 15% OR student stats below 25th percentile
+    - TARGET: Stats between 25th-75th percentile OR moderate acceptance rates
+    - SAFETY: Stats above 75th percentile AND Acceptance Rate > 35%
     """
     
     # Acceptance rate thresholds
@@ -37,56 +42,30 @@ class LabelClassifier:
         Returns Reach, Target, or Safety based on:
         1. University acceptance rate
         2. Student's stats relative to university percentiles
-        3. Calculated admission probability
         """
-        # Get admission probability for classification
-        probability = self.calculate_admission_probability(context, university)
-        
-        # Get acceptance rate classification
         acceptance_rate = university.acceptance_rate
+        percentile = self._get_percentile_position(context, university)
         
-        # Rule 1: Very low acceptance rate = Reach regardless of stats
+        # Rule 1: Very low acceptance rate = Reach (even for strong candidates)
         if acceptance_rate is not None and acceptance_rate < self.REACH_ACCEPTANCE_THRESHOLD:
-            # Even with great stats, sub-15% schools are reaches
-            if probability >= 70:
-                return AdmissionLabel.TARGET  # Strong candidate at hard school
             return AdmissionLabel.REACH
         
-        # Rule 2: Very high acceptance rate (>50%) = likely Safety
-        if acceptance_rate is not None and acceptance_rate > 0.50:
-            # High acceptance rate schools
-            if probability >= 60:
+        # Rule 2: Student in bottom 25% of stats = Reach
+        if percentile is not None and percentile < 25:
+            return AdmissionLabel.REACH
+        
+        # Rule 3: Student in top 25% AND acceptance > 35% = Safety
+        if percentile is not None and percentile >= 75:
+            if acceptance_rate is None or acceptance_rate > self.SAFETY_ACCEPTANCE_THRESHOLD:
                 return AdmissionLabel.SAFETY
-            elif probability >= 40:
-                return AdmissionLabel.TARGET
-            else:
-                return AdmissionLabel.REACH  # Still possible if stats very low
         
-        # Rule 3: Check percentile position for middle-ground schools
-        percentile_position = self._get_percentile_position(context, university)
+        # Rule 4: High acceptance rate (>50%) with decent stats = Safety
+        if acceptance_rate is not None and acceptance_rate > 0.50:
+            if percentile is None or percentile >= 40:
+                return AdmissionLabel.SAFETY
         
-        if percentile_position is not None:
-            if percentile_position < 25:
-                return AdmissionLabel.REACH
-            elif percentile_position > 75:
-                # Above 75th AND acceptance rate > 35% = Safety
-                if acceptance_rate is None or acceptance_rate > self.SAFETY_ACCEPTANCE_THRESHOLD:
-                    return AdmissionLabel.SAFETY
-                else:
-                    return AdmissionLabel.TARGET  # High stats but selective
-            else:
-                # Between 25-75th: use acceptance rate to tiebreak
-                if acceptance_rate is not None and acceptance_rate > 0.40:
-                    return AdmissionLabel.SAFETY if probability >= 50 else AdmissionLabel.TARGET
-                return AdmissionLabel.TARGET
-        
-        # Rule 4: Fall back to admission probability
-        if probability >= 65:
-            return AdmissionLabel.SAFETY
-        elif probability >= 25:
-            return AdmissionLabel.TARGET
-        else:
-            return AdmissionLabel.REACH
+        # Default: Target
+        return AdmissionLabel.TARGET
     
     def calculate_admission_probability(
         self,
@@ -96,46 +75,50 @@ class LabelClassifier:
         """
         Estimate admission probability (0-100).
         
-        Combines acceptance rate with student's relative position.
+        Formula: P(Admit) = f(Acceptance_Rate, Percentile_Position)
+        
+        - Base = Acceptance Rate × 100
+        - Adjust by percentile position:
+          - Top 25% of stats: +30 points
+          - Top 50%: +15 points  
+          - Bottom 25%: -20 points
         """
-        base_probability = 50.0  # Neutral starting point
+        # Start with acceptance rate as base
+        base = 50.0  # Default if no data
         
-        # Factor 1: University acceptance rate
         if university.acceptance_rate is not None:
-            # Transform acceptance rate to probability contribution
-            # Higher acceptance rate = higher base probability
-            acceptance_contribution = university.acceptance_rate * 100
-            base_probability = acceptance_contribution
+            base = university.acceptance_rate * 100
         
-        # Factor 2: Student's academic position relative to admits
+        # Adjust by student's percentile position
         percentile = self._get_percentile_position(context, university)
         
         if percentile is not None:
-            # Adjust probability based on where student falls
             if percentile >= 75:
-                # Above 75th percentile: strong candidate
-                base_probability = min(95, base_probability * 1.3 + 20)
+                # Top 25% of stats - strong candidate
+                adjustment = 30 + (percentile - 75) * 0.5
             elif percentile >= 50:
-                # Above median: solid candidate
-                base_probability = min(85, base_probability * 1.1 + 10)
+                # Above median - solid candidate
+                adjustment = 15 + (percentile - 50) * 0.6
             elif percentile >= 25:
-                # Between 25th-50th: competitive but below median
-                base_probability = base_probability * 0.9
+                # Between 25th-50th - competitive but below median
+                adjustment = (percentile - 25) * 0.6
             else:
-                # Below 25th: weak academic profile
-                base_probability = max(5, base_probability * 0.5 - 10)
+                # Below 25th - weak academic profile for this school
+                adjustment = -20 - (25 - percentile) * 0.5
+            
+            base = base + adjustment
         
-        # Factor 3: Special circumstances boost
+        # Special circumstances boost
         if context.has_legacy and self._has_legacy_at(context, university):
-            base_probability = min(95, base_probability + 15)
+            base = min(95, base + 12)
         
         if context.is_athlete:
-            base_probability = min(95, base_probability + 10)
+            base = min(95, base + 8)
         
         if context.is_first_gen:
-            base_probability = min(95, base_probability + 3)
+            base = min(95, base + 3)
         
-        return max(5, min(95, base_probability))
+        return max(5, min(95, base))
     
     def _get_percentile_position(
         self,
@@ -151,15 +134,18 @@ class LabelClassifier:
         - 50 = at median
         - 75 = at 75th percentile
         - 100 = well above 75th
+        
+        Uses weighted average of GPA and SAT positions.
         """
         positions = []
         
-        # GPA position
+        # GPA position (Z-score to percentile)
         if university.median_gpa is not None:
             gpa_diff = context.gpa - university.median_gpa
-            # Convert GPA difference to percentile estimate
-            # +0.3 GPA = roughly at 75th, -0.3 = roughly at 25th
-            gpa_percentile = 50 + (gpa_diff / 0.3) * 25
+            # Assume std dev of 0.12 for admitted students
+            z_score = gpa_diff / 0.12
+            # Convert Z-score to percentile (Z=0 → 50, Z=1 → 84, Z=-1 → 16)
+            gpa_percentile = 50 + z_score * 34
             gpa_percentile = max(0, min(100, gpa_percentile))
             positions.append(gpa_percentile)
         
@@ -171,23 +157,31 @@ class LabelClassifier:
         if student_sat is not None and university.sat_25th and university.sat_75th:
             sat_25 = university.sat_25th
             sat_75 = university.sat_75th
+            sat_mid = (sat_25 + sat_75) / 2
             
             if student_sat <= sat_25:
-                sat_percentile = 25 * (student_sat / sat_25)
+                # Below 25th percentile
+                deficit = sat_25 - student_sat
+                sat_percentile = max(0, 25 - deficit / 5)
             elif student_sat >= sat_75:
+                # Above 75th percentile
                 excess = student_sat - sat_75
-                sat_percentile = 75 + min(25, excess / 50 * 25)
+                sat_percentile = min(100, 75 + excess / 5)
             else:
                 # Between 25th and 75th
-                ratio = (student_sat - sat_25) / (sat_75 - sat_25)
-                sat_percentile = 25 + ratio * 50
+                if student_sat <= sat_mid:
+                    ratio = (student_sat - sat_25) / (sat_mid - sat_25)
+                    sat_percentile = 25 + ratio * 25
+                else:
+                    ratio = (student_sat - sat_mid) / (sat_75 - sat_mid)
+                    sat_percentile = 50 + ratio * 25
             
             positions.append(sat_percentile)
         
         if not positions:
             return None
         
-        # Average positions (GPA weighted slightly more)
+        # Weighted average (GPA 55%, SAT 45%)
         if len(positions) == 2:
             return positions[0] * 0.55 + positions[1] * 0.45
         
