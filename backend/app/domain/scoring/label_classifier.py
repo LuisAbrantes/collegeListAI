@@ -37,6 +37,7 @@ class LabelClassifier:
         Returns Reach, Target, or Safety based on:
         1. University acceptance rate
         2. Student's stats relative to university percentiles
+        3. Calculated admission probability
         """
         # Get admission probability for classification
         probability = self.calculate_admission_probability(context, university)
@@ -51,7 +52,17 @@ class LabelClassifier:
                 return AdmissionLabel.TARGET  # Strong candidate at hard school
             return AdmissionLabel.REACH
         
-        # Rule 2: Student stats below 25th percentile = Reach
+        # Rule 2: Very high acceptance rate (>50%) = likely Safety
+        if acceptance_rate is not None and acceptance_rate > 0.50:
+            # High acceptance rate schools
+            if probability >= 60:
+                return AdmissionLabel.SAFETY
+            elif probability >= 40:
+                return AdmissionLabel.TARGET
+            else:
+                return AdmissionLabel.REACH  # Still possible if stats very low
+        
+        # Rule 3: Check percentile position for middle-ground schools
         percentile_position = self._get_percentile_position(context, university)
         
         if percentile_position is not None:
@@ -64,12 +75,15 @@ class LabelClassifier:
                 else:
                     return AdmissionLabel.TARGET  # High stats but selective
             else:
-                return AdmissionLabel.TARGET  # Between 25th-75th
+                # Between 25-75th: use acceptance rate to tiebreak
+                if acceptance_rate is not None and acceptance_rate > 0.40:
+                    return AdmissionLabel.SAFETY if probability >= 50 else AdmissionLabel.TARGET
+                return AdmissionLabel.TARGET
         
-        # Rule 3: Fall back to admission probability
-        if probability >= 70:
+        # Rule 4: Fall back to admission probability
+        if probability >= 65:
             return AdmissionLabel.SAFETY
-        elif probability >= 30:
+        elif probability >= 25:
             return AdmissionLabel.TARGET
         else:
             return AdmissionLabel.REACH

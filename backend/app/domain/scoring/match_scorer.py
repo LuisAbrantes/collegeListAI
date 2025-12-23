@@ -170,20 +170,20 @@ class MatchScorer:
         targets = [s for s in viable if s.label == AdmissionLabel.TARGET]
         safeties = [s for s in viable if s.label == AdmissionLabel.SAFETY]
         
-        # Build final list: 2 Safety, 2 Target, 1 Reach
+        # Build final list: 1 Reach, 2 Target, 2 Safety
         recommendations: List[ScoredUniversity] = []
         
-        # Add safeties (highest match score first)
-        for safety in safeties[:2]:
-            recommendations.append(safety)
+        # Add reach (1 best match score)
+        for reach in reaches[:1]:
+            recommendations.append(reach)
         
-        # Add targets
+        # Add targets (2)
         for target in targets[:2]:
             recommendations.append(target)
         
-        # Add reach (best match score)
-        for reach in reaches[:1]:
-            recommendations.append(reach)
+        # Add safeties (2 highest match score)
+        for safety in safeties[:2]:
+            recommendations.append(safety)
         
         # If we don't have enough, fill from remaining
         remaining_needed = count - len(recommendations)

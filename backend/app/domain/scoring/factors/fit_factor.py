@@ -21,6 +21,8 @@ class FitFactor(BaseScoringFactor):
     - Campus setting preference (urban/suburban/rural)
     - Geographic location
     - Career alignment with post-grad goals
+    
+    ONLY APPLICABLE if user has expressed a preference.
     """
     
     @property
@@ -30,6 +32,12 @@ class FitFactor(BaseScoringFactor):
     @property
     def base_weight(self) -> float:
         return 0.10
+    
+    def is_applicable(self, context: StudentContext) -> bool:
+        """Only apply if user specified campus preference or post-grad goal."""
+        has_campus_pref = context.campus_preference is not None
+        has_career_goal = context.post_grad_goal is not None and context.post_grad_goal != "UNDECIDED"
+        return has_campus_pref or has_career_goal
     
     def calculate(
         self,

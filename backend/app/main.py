@@ -33,8 +33,27 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler for startup/shutdown."""
     # Startup
     logger.info(f"College List AI Backend starting in {settings.environment} mode...")
+    
+    # Initialize SQLModel database if URL is configured
+    if settings.database_url:
+        try:
+            from app.infrastructure.db.database import init_db, close_db
+            await init_db()
+            logger.info("SQLModel database connection pool initialized")
+        except Exception as e:
+            logger.warning(f"SQLModel database initialization skipped: {e}")
+    
     yield
+    
     # Shutdown
+    if settings.database_url:
+        try:
+            from app.infrastructure.db.database import close_db
+            await close_db()
+            logger.info("SQLModel database connection pool closed")
+        except Exception as e:
+            logger.warning(f"SQLModel database shutdown error: {e}")
+    
     logger.info("College List AI Backend shutting down...")
 
 

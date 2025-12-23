@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     retry_base_delay: float = 1.0
     retry_max_delay: float = 10.0
     
+    # Database Configuration (SQLModel/SQLAlchemy)
+    database_url: Optional[str] = None
+    database_pool_size: int = 5
+    database_max_overflow: int = 10
+    database_pool_timeout: int = 30
+    database_echo: bool = False
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
