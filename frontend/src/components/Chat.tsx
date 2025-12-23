@@ -7,7 +7,6 @@ import type { FormEvent } from 'react';
 import { useChat } from '../hooks/useChat';
 import type { Message } from '../hooks/useChat';
 import type { UserProfile } from '../types/api';
-import { CollegeCard } from './CollegeCard';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowUp } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -20,7 +19,6 @@ interface ChatProps {
 export function Chat({ profile }: ChatProps) {
   const { messages, isStreaming, error, sendMessage } = useChat();
   const [input, setInput] = useState('');
-  const [viewMode, setViewMode] = useState<'text' | 'card'>('text');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -50,39 +48,13 @@ export function Chat({ profile }: ChatProps) {
       isFirstGen: profile.isFirstGen,
       apClassCount: profile.apClassCount,
       apClasses: profile.apClasses,
-    }, { mode: viewMode });
+    }, { mode: 'text' });
     
     setInput('');
   };
 
   return (
     <div className="h-full flex flex-col relative">
-      
-      {/* Top Bar (View Mode Toggle) */}
-      <div className="flex justify-end p-4 absolute top-0 right-0 z-20">
-          <div className="flex bg-zinc-900 rounded-lg p-1 border border-white/10">
-            <button
-              onClick={() => setViewMode('text')}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer ${
-                viewMode === 'text' 
-                  ? 'bg-zinc-800 text-white shadow-sm' 
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              Chat
-            </button>
-            <button
-              onClick={() => setViewMode('card')}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer ${
-                viewMode === 'card' 
-                  ? 'bg-zinc-800 text-white shadow-sm' 
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              Cards
-            </button>
-          </div>
-      </div>
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto px-4 flex flex-col">
@@ -118,7 +90,7 @@ export function Chat({ profile }: ChatProps) {
           {isStreaming && (
             <div className="py-4">
                <span className="font-mono text-xs text-zinc-400 animate-pulse">
-                 {viewMode === 'card' ? 'Finding best matches...' : 'Thinking...'}
+                 Thinking...
                </span>
             </div>
           )}
@@ -216,15 +188,6 @@ function MessageItem({ message }: { message: Message }) {
               </a>
             ))}
           </div>
-        )}
-        
-        {/* Recommendations Grid */}
-        {!isUser && message.recommendations && message.recommendations.length > 0 && (
-           <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-             {message.recommendations.map(college => (
-               <CollegeCard key={college.id} {...college} />
-             ))}
-           </div>
         )}
       </div>
     </motion.div>

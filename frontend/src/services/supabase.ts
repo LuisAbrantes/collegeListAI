@@ -64,14 +64,12 @@ export function getSupabaseClient() {
  * Wrap Supabase errors in a consistent format
  */
 function handleError(error: unknown): ApiResponse<never> {
-  console.error('Supabase error details:', JSON.stringify(error, null, 2));
   const err = error as { message?: string; code?: string; details?: string; hint?: string };
   return {
     data: null,
     error: {
       error: err.code ?? 'UNKNOWN_ERROR',
       message: err.message ?? 'An unexpected error occurred',
-      details: { hint: err.hint, details: err.details },
     },
   };
 }
@@ -284,8 +282,6 @@ export const profileService = {
     if (updates.apClasses !== undefined) {
       updateData.ap_classes = updates.apClasses && updates.apClasses.length > 0 ? updates.apClasses : null;
     }
-
-    console.log('Sending update data:', JSON.stringify(updateData, null, 2));
 
     const { data, error } = await supabase
       .from('profiles')
