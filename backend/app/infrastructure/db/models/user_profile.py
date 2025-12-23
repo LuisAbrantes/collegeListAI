@@ -42,6 +42,13 @@ class UserProfileBase(SQLModel):
         description="Country of citizenship"
     )
     
+    # User identity (UI only - NOT sent to AI)
+    name: Optional[str] = Field(
+        default=None,
+        max_length=100,
+        description="User's name (UI display only, never sent to AI)"
+    )
+    
     # Academic metrics
     gpa: float = Field(
         ...,
@@ -165,6 +172,7 @@ class UserProfileUpdate(SQLModel):
     
     citizenship_status: Optional[CitizenshipStatus] = None
     nationality: Optional[str] = Field(default=None, min_length=2, max_length=100)
+    name: Optional[str] = Field(default=None, max_length=100)
     gpa: Optional[float] = Field(default=None, ge=0.0, le=4.0)
     major: Optional[str] = Field(default=None, min_length=2, max_length=100)
     sat_score: Optional[int] = Field(default=None, ge=400, le=1600)

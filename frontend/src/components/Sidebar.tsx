@@ -60,7 +60,7 @@ export function Sidebar({ userProfile, onSignOut }: SidebarProps) {
           </div>
           <div className="flex-1 overflow-hidden">
             <p className="text-sm font-medium text-white truncate m-0">
-              User
+              {userProfile.name || 'User'}
             </p>
             <p className="text-xs text-zinc-500 truncate m-0">
               GPA: {userProfile.gpa} • {userProfile.major}

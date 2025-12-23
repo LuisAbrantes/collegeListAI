@@ -49,6 +49,8 @@ export type EnglishTestType = 'TOEFL' | 'DUOLINGO' | 'IELTS';
 export interface UserProfileCreate {
   /** Student's citizenship/residency status (required) */
   citizenshipStatus: CitizenshipStatus;
+  /** User's name (UI only, never sent to AI) */
+  name?: string;
   /** Country of citizenship (optional context) */
   nationality?: string;
   /** GPA on 4.0 scale (0.0 - 4.0) */
@@ -90,6 +92,7 @@ export interface UserProfileCreate {
  */
 export interface UserProfileUpdate {
   citizenshipStatus?: CitizenshipStatus;
+  name?: string;
   nationality?: string;
   gpa?: number;
   major?: string;
@@ -117,6 +120,8 @@ export interface UserProfile {
   userId: string;
   /** Student's citizenship/residency status */
   citizenshipStatus?: CitizenshipStatus;
+  /** User's name (UI display only) */
+  name?: string;
   nationality?: string;
   gpa: number;
   major: string;

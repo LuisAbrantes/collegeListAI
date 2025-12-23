@@ -63,6 +63,8 @@ Format your response as clear, readable markdown text:
 - Provide brief, personalized explanations
 
 Example format:
+## 🎓 Top University Recommendations for you
+
 **Massachusetts Institute of Technology (MIT)** - Reach (Match: 55%)
 MIT's world-class CS program and strong financial aid make it worth applying. As an international student, note that MIT is need-blind for all applicants.
 

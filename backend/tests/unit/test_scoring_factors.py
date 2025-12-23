@@ -117,15 +117,15 @@ class TestAcademicFitFactor:
             is_domestic=True,
             citizenship_status="US_CITIZEN",
             gpa=3.78,  # Exactly at UIUC median
-            sat_score=1400,
+            sat_score=1400,  # Within range
             intended_major="CS",
         )
         
         score = academic_factor.calculate(student, uiuc)
         
-        # Should be around 80, not 49%
+        # Should be around 80, not 49% (old scoring)
         assert score >= 75, f"At-median student should score >=75%, got {score}%"
-        assert score <= 85, f"At-median student should score <=85%, got {score}%"
+        assert score <= 90, f"At-median student should score <=90%, got {score}%"
     
     def test_slightly_below_median_not_heavily_penalized(self, academic_factor, mit):
         """Student 0.1 below median should still score reasonably."""
@@ -139,22 +139,43 @@ class TestAcademicFitFactor:
         
         score = academic_factor.calculate(student, mit)
         
-        # Should be around 70-75, NOT 49%
-        assert score >= 65, f"Slightly below median should score >=65%, got {score}%"
+        # Should be around 70-80, NOT 49%
+        assert score >= 70, f"Slightly below median should score >=70%, got {score}%"
     
     def test_above_median_yields_high_score(self, academic_factor, uiuc, strong_student):
         """Student above median should score high."""
         score = academic_factor.calculate(strong_student, uiuc)
         
-        # 3.8 GPA vs 3.78 median = slight advantage
+        # 3.8 GPA vs 3.78 median + 1450 SAT in range = good match
         assert score >= 78, f"Above median should score >=78%, got {score}%"
     
     def test_well_above_median_yields_very_high_score(self, academic_factor, arizona_state, elite_student):
         """Elite student at safety school should score very high."""
         score = academic_factor.calculate(elite_student, arizona_state)
         
-        # 3.95 GPA vs 3.50 median = huge advantage
+        # 3.95 GPA vs 3.50 median + 1550 SAT = huge advantage
         assert score >= 90, f"Well above median should score >=90%, got {score}%"
+    
+    def test_student_within_25th_75th_percentile_scores_above_75(self, academic_factor):
+        """CALIBRATION TEST: Students within 25th-75th percentile must score >= 75%."""
+        # Test student with SAT exactly at 25th percentile
+        student = StudentContext(
+            is_domestic=True,
+            citizenship_status="US_CITIZEN",
+            gpa=3.70,
+            sat_score=1320,  # At UIUC 25th percentile
+            intended_major="CS",
+        )
+        university = UniversityData(
+            name="University of Illinois Urbana-Champaign",
+            acceptance_rate=0.45,
+            median_gpa=3.78,
+            sat_25th=1320,
+            sat_75th=1500,
+        )
+        
+        score = academic_factor.calculate(student, university)
+        assert score >= 75, f"Student at 25th percentile should score >=75%, got {score}%"
 
 
 # ============== Label Classifier Tests ==============
