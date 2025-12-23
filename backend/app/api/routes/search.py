@@ -179,13 +179,13 @@ async def get_recommendations(
         ]
         
         # Get AI recommendations
-        response = await gemini_service.generate_recommendations(
+        response = await gemini_service.generate_recommendations_with_search(
             user_query=request.query,
             nationality=request.nationality,
             gpa=request.gpa,
             major=request.major,
             excluded_colleges=request.excluded_colleges,
-            similar_colleges=colleges_data,
+            cached_colleges=colleges_data,
         )
         
         return response

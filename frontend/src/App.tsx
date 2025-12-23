@@ -7,11 +7,14 @@
  * 3. Has profile -> Chat
  */
 
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import { useProfile } from './hooks/useProfile';
 import { AuthForm } from './components/AuthForm';
 import { ProfileForm } from './components/ProfileForm';
 import { Chat } from './components/Chat';
+import { Profile } from './components/Profile';
+import { Layout } from './components/Layout';
 
 function App() {
   const { user, loading: authLoading, signOut } = useAuth();
@@ -53,8 +56,18 @@ function App() {
     );
   }
 
-  // Has profile -> show chat
-  return <Chat profile={profile} onSignOut={signOut} />;
+  // Has profile -> show app with routing
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route element={<Layout userProfile={profile} onSignOut={signOut} />}>
+          <Route path="/" element={<Chat profile={profile} />} />
+          <Route path="/profile" element={<Profile currentProfile={profile} />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
 }
 
 export default App;

@@ -9,17 +9,18 @@ import type { Message } from '../hooks/useChat';
 import type { UserProfile } from '../types/api';
 import { CollegeCard } from './CollegeCard';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowUp } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 interface ChatProps {
   profile: UserProfile;
-  onSignOut: () => void;
 }
 
-export function Chat({ profile, onSignOut }: ChatProps) {
+export function Chat({ profile }: ChatProps) {
   const { messages, isStreaming, error, sendMessage } = useChat();
   const [input, setInput] = useState('');
+  const [viewMode, setViewMode] = useState<'text' | 'card'>('text');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,33 +35,43 @@ export function Chat({ profile, onSignOut }: ChatProps) {
       nationality: profile.nationality,
       gpa: profile.gpa,
       major: profile.major,
-    });
+    }, { mode: viewMode });
     
     setInput('');
   };
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div className="h-full flex flex-col relative">
       
-      {/* Navbar */}
-      <header className="glass-card m-4 px-6 py-4 flex justify-between items-center rounded-xl z-10">
-        <div className="flex items-center gap-4">
-          <h1 className="text-base font-semibold m-0">College List AI</h1>
-          <span className="text-xs font-mono text-zinc-400 pl-4 border-l border-white/10">
-            {profile.major} • GPA {profile.gpa}
-          </span>
-        </div>
-        <button 
-          onClick={onSignOut} 
-          className="bg-none border-none text-zinc-500 text-sm cursor-pointer hover:text-white transition-colors"
-        >
-          Sign out
-        </button>
-      </header>
+      {/* Top Bar (View Mode Toggle) */}
+      <div className="flex justify-end p-4 absolute top-0 right-0 z-20">
+          <div className="flex bg-zinc-900 rounded-lg p-1 border border-white/10">
+            <button
+              onClick={() => setViewMode('text')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                viewMode === 'text' 
+                  ? 'bg-zinc-800 text-white shadow-sm' 
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              Chat
+            </button>
+            <button
+              onClick={() => setViewMode('card')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                viewMode === 'card' 
+                  ? 'bg-zinc-800 text-white shadow-sm' 
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              Cards
+            </button>
+          </div>
+      </div>
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto px-4 flex flex-col">
-        <div className="max-w-3xl w-full mx-auto pb-32">
+        <div className="max-w-3xl w-full mx-auto pb-4">
           
           <AnimatePresence>
             {messages.length === 0 && (
@@ -91,8 +102,8 @@ export function Chat({ profile, onSignOut }: ChatProps) {
 
           {isStreaming && (
             <div className="py-4">
-               <span className="font-mono text-xs text-zinc-500 animate-pulse">
-                 Thinking...
+               <span className="font-mono text-xs text-zinc-400 animate-pulse">
+                 {viewMode === 'card' ? 'Finding best matches...' : 'Thinking...'}
                </span>
             </div>
           )}
@@ -108,7 +119,7 @@ export function Chat({ profile, onSignOut }: ChatProps) {
       </div>
 
       {/* Input Area */}
-      <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-zinc-950 via-zinc-950/90 to-transparent z-20">
+      <div className="p-6 bg-zinc-950 z-20">
         <form 
           onSubmit={handleSubmit}
           className="max-w-3xl mx-auto relative"
@@ -117,16 +128,16 @@ export function Chat({ profile, onSignOut }: ChatProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask about universities, majors, or financial aid..."
-            className="glass-input w-full py-4 px-5 pr-14 rounded-3xl text-base shadow-2xl bg-zinc-900/90 border-white/10"
+            className="glass-input w-full py-4 px-5 pr-14 rounded-3xl text-sm shadow-2xl bg-zinc-900 border border-white/10 text-white placeholder:text-zinc-400 focus:outline-none focus:border-white/20 focus:ring-1 focus:ring-white/20 transition-all"
           />
           <button
             type="submit"
             disabled={!input.trim() || isStreaming}
-            className={`absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+            className={`absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all border-none ${
               input.trim() ? 'bg-white text-black cursor-pointer hover:scale-105' : 'bg-white/10 text-zinc-500 cursor-default'
             }`}
           >
-            ↑
+            <ArrowUp size={18} />
           </button>
         </form>
       </div>
@@ -194,7 +205,7 @@ function MessageItem({ message }: { message: Message }) {
         
         {/* Recommendations Grid */}
         {!isUser && message.recommendations && message.recommendations.length > 0 && (
-           <div className="mt-6">
+           <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
              {message.recommendations.map(college => (
                <CollegeCard key={college.id} {...college} />
              ))}
