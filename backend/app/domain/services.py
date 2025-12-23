@@ -13,12 +13,12 @@ from uuid import UUID
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 
-from backend.app.domain.models import (
+from app.domain.models import (
     UserProfile,
     UserProfileCreate,
     UserProfileUpdate,
 )
-from backend.app.infrastructure.exceptions import (
+from app.infrastructure.exceptions import (
     DatabaseError,
     NotFoundError,
     DuplicateError,

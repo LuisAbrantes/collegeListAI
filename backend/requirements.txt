@@ -1,0 +1,23 @@
+# College List AI - Backend Dependencies
+
+# FastAPI and server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+sse-starlette>=2.0.0
+
+# Data validation
+pydantic>=2.0.0
+
+# Database
+supabase>=2.0.0
+
+# AI/ML
+google-genai>=1.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+
+# Development
+httpx>=0.26.0
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
