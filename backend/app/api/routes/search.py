@@ -61,7 +61,7 @@ class RecommendRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000)
     
     # Core identification
-    citizenship_status: str = Field(..., description="US_CITIZEN, PERMANENT_RESIDENT, INTERNATIONAL, DACA")
+    citizenship_status: Optional[str] = Field(None, description="US_CITIZEN, PERMANENT_RESIDENT, INTERNATIONAL, DACA")
     nationality: Optional[str] = Field(None, min_length=2, max_length=100)
     
     # Academic metrics
@@ -77,7 +77,7 @@ class RecommendRequest(BaseModel):
     household_income_tier: Optional[str] = Field(None, description="LOW, MEDIUM, HIGH")
     
     # International-specific
-    english_proficiency_score: Optional[int] = Field(None, ge=0, le=120)
+    english_proficiency_score: Optional[int] = Field(None, ge=0, le=160, description="TOEFL (120 max), IELTS (9 max), Duolingo (160 max)")
     english_test_type: Optional[str] = Field(None, description="TOEFL, IELTS, DUOLINGO")
     
     # Fit factors
@@ -240,6 +240,14 @@ async def get_recommendations(
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/recommend/debug")
+async def debug_request(request_data: dict):
+    """Debug endpoint to see raw request body."""
+    import logging
+    logging.info(f"DEBUG REQUEST BODY: {request_data}")
+    return {"received": request_data}
 
 
 @router.post("/recommend/stream")

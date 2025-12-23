@@ -4,7 +4,7 @@
 
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import type { UserProfileCreate } from '../types/api';
+import type { UserProfileCreate, CitizenshipStatus } from '../types/api';
 import { motion } from 'framer-motion';
 
 interface ProfileFormProps {
@@ -14,14 +14,22 @@ interface ProfileFormProps {
 }
 
 export function ProfileForm({ onSubmit, loading = false, error }: ProfileFormProps) {
+  const [citizenshipStatus, setCitizenshipStatus] = useState<CitizenshipStatus>('INTERNATIONAL');
   const [nationality, setNationality] = useState('');
   const [gpa, setGpa] = useState('');
   const [major, setMajor] = useState('');
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    await onSubmit({ nationality, gpa: parseFloat(gpa), major });
+    await onSubmit({ 
+      citizenshipStatus,
+      nationality: nationality || undefined, 
+      gpa: parseFloat(gpa), 
+      major 
+    });
   };
+
+  const isInternational = citizenshipStatus === 'INTERNATIONAL';
 
   return (
     <div className="min-h-screen flex items-center justify-center">
@@ -43,20 +51,40 @@ export function ProfileForm({ onSubmit, loading = false, error }: ProfileFormPro
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-8">
           
-          {/* Nationality */}
+          {/* Citizenship Status */}
           <div>
             <label className="block mb-2 text-sm text-zinc-400">
-              Citizenship / Nationality
+              Citizenship Status
             </label>
-            <input
-              type="text"
-              value={nationality}
-              onChange={(e) => setNationality(e.target.value)}
-              placeholder="e.g. Brazil"
+            <select
+              value={citizenshipStatus}
+              onChange={(e) => setCitizenshipStatus(e.target.value as CitizenshipStatus)}
               required
               className="glass-input font-mono w-full"
-            />
+            >
+              <option value="INTERNATIONAL">International Student</option>
+              <option value="US_CITIZEN">US Citizen</option>
+              <option value="PERMANENT_RESIDENT">Permanent Resident</option>
+              <option value="DACA">DACA</option>
+            </select>
           </div>
+
+          {/* Nationality - only show for international */}
+          {isInternational && (
+            <div>
+              <label className="block mb-2 text-sm text-zinc-400">
+                Country of Citizenship
+              </label>
+              <input
+                type="text"
+                value={nationality}
+                onChange={(e) => setNationality(e.target.value)}
+                placeholder="e.g. Brazil"
+                required={isInternational}
+                className="glass-input font-mono w-full"
+              />
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-6">
             {/* GPA */}
@@ -86,7 +114,7 @@ export function ProfileForm({ onSubmit, loading = false, error }: ProfileFormPro
                 type="text"
                 value={major}
                 onChange={(e) => setMajor(e.target.value)}
-                placeholder="CS"
+                placeholder="Computer Science"
                 required
                 className="glass-input font-mono w-full"
               />

@@ -125,33 +125,46 @@ export function useChat(): UseChatReturn {
         ? `${API_BASE}/api/recommend`
         : `${API_BASE}/api/recommend/stream`;
 
+      // Validate required fields
+      if (profile.gpa === undefined || profile.gpa === null) {
+        throw new Error('GPA is required. Please update your profile.');
+      }
+      if (!profile.major) {
+        throw new Error('Major is required. Please update your profile.');
+      }
+
+      const requestBody = {
+        query,
+        citizenship_status: profile.citizenshipStatus || 'INTERNATIONAL',
+        nationality: profile.nationality,
+        gpa: profile.gpa,
+        major: profile.major,
+        sat_score: profile.satScore,
+        act_score: profile.actScore,
+        state_of_residence: profile.stateOfResidence,
+        household_income_tier: profile.householdIncomeTier,
+        english_proficiency_score: profile.englishProficiencyScore,
+        english_test_type: profile.englishTestType,
+        campus_vibe: profile.campusVibe,
+        is_student_athlete: profile.isStudentAthlete,
+        has_legacy_status: profile.hasLegacyStatus,
+        legacy_universities: profile.legacyUniversities,
+        post_grad_goal: profile.postGradGoal,
+        is_first_gen: profile.isFirstGen,
+        ap_class_count: profile.apClassCount,
+        ap_classes: profile.apClasses,
+      };
+
+      // DEBUG: Log the request body
+      console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
+
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': options.mode === 'card' ? 'application/json' : 'text/event-stream',
         },
-        body: JSON.stringify({
-          query,
-          citizenship_status: profile.citizenshipStatus,
-          nationality: profile.nationality,
-          gpa: profile.gpa,
-          major: profile.major,
-          sat_score: profile.satScore,
-          act_score: profile.actScore,
-          state_of_residence: profile.stateOfResidence,
-          household_income_tier: profile.householdIncomeTier,
-          english_proficiency_score: profile.englishProficiencyScore,
-          english_test_type: profile.englishTestType,
-          campus_vibe: profile.campusVibe,
-          is_student_athlete: profile.isStudentAthlete,
-          has_legacy_status: profile.hasLegacyStatus,
-          legacy_universities: profile.legacyUniversities,
-          post_grad_goal: profile.postGradGoal,
-          is_first_gen: profile.isFirstGen,
-          ap_class_count: profile.apClassCount,
-          ap_classes: profile.apClasses,
-        }),
+        body: JSON.stringify(requestBody),
         signal: abortControllerRef.current.signal,
       });
 
