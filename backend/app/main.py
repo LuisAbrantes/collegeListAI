@@ -5,14 +5,14 @@ Main entry point for the backend API.
 Provides endpoints for profiles, search, and AI recommendations.
 """
 
-import os
+import logging
 from contextlib import asynccontextmanager
-from dotenv import load_dotenv
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.config.settings import settings
 from app.infrastructure.exceptions import (
     CollegeListAIError,
     ValidationError,
@@ -20,18 +20,22 @@ from app.infrastructure.exceptions import (
     RateLimitError,
 )
 
-# Load environment variables
-load_dotenv()
+# Configure logging
+logging.basicConfig(
+    level=getattr(logging, settings.log_level.upper()),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler for startup/shutdown."""
     # Startup
-    print("🚀 College List AI Backend starting...")
+    logger.info(f"College List AI Backend starting in {settings.environment} mode...")
     yield
     # Shutdown
-    print("👋 College List AI Backend shutting down...")
+    logger.info("College List AI Backend shutting down...")
 
 
 app = FastAPI(
@@ -39,19 +43,13 @@ app = FastAPI(
     description="AI-powered college advisor for international students",
     version="1.0.0",
     lifespan=lifespan,
+    debug=settings.debug,
 )
 
-# CORS configuration
-origins = [
-    "http://localhost:5173",  # Vite dev server
-    "http://localhost:3000",
-    "http://127.0.0.1:5173",
-    os.getenv("FRONTEND_URL", ""),
-]
-
+# CORS configuration from Settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o for o in origins if o],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

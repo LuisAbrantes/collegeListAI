@@ -13,7 +13,6 @@ Production features:
 """
 
 import asyncio
-import os
 from typing import List, Optional
 import logging
 
@@ -21,11 +20,11 @@ from google import genai
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 
+from app.config.settings import settings
 from app.domain.models import CollegeSearchResult, CollegeMetadata
 from app.infrastructure.exceptions import (
     EmbeddingGenerationError,
     SimilaritySearchError,
-    ConfigurationError,
     RateLimitError,
 )
 
@@ -49,13 +48,6 @@ class VectorService:
     _genai_client: Optional[genai.Client] = None
     _initialized: bool = False
     
-    # Configuration
-    EMBEDDING_MODEL = "text-embedding-004"
-    EMBEDDING_DIMENSION = 768
-    MAX_RETRIES = 3
-    BASE_DELAY = 1.0
-    MAX_DELAY = 10.0
-    
     def __new__(cls) -> "VectorService":
         """Singleton pattern for connection pooling."""
         if cls._instance is None:
@@ -68,36 +60,43 @@ class VectorService:
             VectorService._initialized = True
     
     def _initialize(self) -> None:
-        """Initialize Supabase and GenAI clients."""
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        google_api_key = os.getenv("GOOGLE_API_KEY")
-        
-        missing_keys = []
-        if not supabase_url:
-            missing_keys.append("SUPABASE_URL")
-        if not supabase_key:
-            missing_keys.append("SUPABASE_SERVICE_ROLE_KEY")
-        if not google_api_key:
-            missing_keys.append("GOOGLE_API_KEY")
-        
-        if missing_keys:
-            raise ConfigurationError(
-                "Missing required environment variables",
-                missing_keys=missing_keys
-            )
-        
+        """Initialize Supabase and GenAI clients using Settings."""
         # Configure Supabase
         options = ClientOptions(
             postgrest_client_timeout=30,
             storage_client_timeout=60,
         )
-        self._supabase = create_client(supabase_url, supabase_key, options)
+        self._supabase = create_client(
+            settings.supabase_url, 
+            settings.supabase_service_role_key, 
+            options
+        )
         
         # Configure new GenAI client
-        self._genai_client = genai.Client(api_key=google_api_key)
+        self._genai_client = genai.Client(api_key=settings.google_api_key)
         
         logger.info("VectorService initialized successfully")
+    
+    # Configuration properties from Settings
+    @property
+    def EMBEDDING_MODEL(self) -> str:
+        return settings.embedding_model
+    
+    @property
+    def EMBEDDING_DIMENSION(self) -> int:
+        return settings.embedding_dimensions
+    
+    @property
+    def MAX_RETRIES(self) -> int:
+        return settings.max_retries
+    
+    @property
+    def BASE_DELAY(self) -> float:
+        return settings.retry_base_delay
+    
+    @property
+    def MAX_DELAY(self) -> float:
+        return settings.retry_max_delay
     
     @property
     def supabase(self) -> Client:

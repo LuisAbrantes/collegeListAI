@@ -7,12 +7,14 @@ sse-starlette>=2.0.0
 
 # Data validation
 pydantic>=2.0.0
+pydantic-settings>=2.0.0
 
 # Database
 supabase>=2.0.0
 
 # AI/ML
 google-genai>=1.0.0
+langgraph>=1.0.0
 
 # Utilities
 python-dotenv>=1.0.0
