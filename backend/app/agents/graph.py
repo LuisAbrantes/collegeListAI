@@ -5,7 +5,7 @@ Orchestrates the recommendation agent with conditional branching
 for domestic vs international students.
 
 Workflow:
-    START → router → researcher → analyzer → recommender → END
+    START → router → researcher → analyzer → scorer → recommender → END
 
 The router determines the student type and sets context for
 subsequent nodes to apply appropriate logic.
@@ -24,7 +24,8 @@ from app.agents.state import (
 )
 from app.agents.nodes.researcher import researcher_node
 from app.agents.nodes.analyzer import analyzer_node
-from app.agents.nodes.recommender import recommender_node, recommender_node_streaming
+from app.agents.nodes.scorer import scorer_node
+from app.agents.nodes.recommender import recommender_node
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,8 @@ def build_recommendation_graph() -> StateGraph:
     """
     Build the LangGraph workflow for college recommendations.
     
+    Flow: START → router → researcher → analyzer → scorer → recommender → END
+    
     Returns:
         Compiled StateGraph ready for execution
     """
@@ -86,13 +89,15 @@ def build_recommendation_graph() -> StateGraph:
     builder.add_node("router", router_node)
     builder.add_node("researcher", researcher_node)
     builder.add_node("analyzer", analyzer_node)
+    builder.add_node("scorer", scorer_node)
     builder.add_node("recommender", recommender_node)
     
-    # Add edges (linear flow for now)
+    # Add edges - now includes scorer between analyzer and recommender
     builder.add_edge(START, "router")
     builder.add_edge("router", "researcher")
     builder.add_edge("researcher", "analyzer")
-    builder.add_edge("analyzer", "recommender")
+    builder.add_edge("analyzer", "scorer")
+    builder.add_edge("scorer", "recommender")
     builder.add_edge("recommender", END)
     
     # Compile and return
