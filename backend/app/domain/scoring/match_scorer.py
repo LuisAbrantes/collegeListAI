@@ -143,22 +143,30 @@ class MatchScorer:
         self,
         context: StudentContext,
         universities: List[UniversityData],
-        count: int = 5
+        counts: Dict[str, int] | None = None
     ) -> List[ScoredUniversity]:
         """
         Select the best university recommendations.
         
-        Ensures distribution: 2 Safety, 2 Target, 1 Reach
-        Only includes universities above MIN_MATCH_THRESHOLD.
+        Uses custom distribution from counts dict, or defaults to 1-2-2.
         
         Args:
             context: Student profile context
             universities: List of university data
-            count: Number of recommendations (default 5)
+            counts: Dictionary with {"reach": N, "target": N, "safety": N}
             
         Returns:
-            List of 5 recommendations with proper distribution
+            List of recommendations with requested distribution
         """
+        # Default to 1-2-2 if no counts provided
+        if counts is None:
+            counts = {"reach": 1, "target": 2, "safety": 2}
+        
+        reach_count = counts.get("reach", 1)
+        target_count = counts.get("target", 2)
+        safety_count = counts.get("safety", 2)
+        total_count = reach_count + target_count + safety_count
+        
         # Score all universities
         all_scored = self.score_universities(context, universities)
         
@@ -174,26 +182,26 @@ class MatchScorer:
         viable_safeties = [s for s in all_safeties if s.match_score >= 50.0]
         
         # If not enough Safety schools, take best from all_safeties regardless of threshold
-        if len(viable_safeties) < 2 and len(all_safeties) > len(viable_safeties):
-            viable_safeties = sorted(all_safeties, key=lambda s: s.match_score, reverse=True)[:2]
+        if len(viable_safeties) < safety_count and len(all_safeties) > len(viable_safeties):
+            viable_safeties = sorted(all_safeties, key=lambda s: s.match_score, reverse=True)[:safety_count]
         
-        # Build final list: 1 Reach, 2 Target, 2 Safety
+        # Build final list with requested counts
         recommendations: List[ScoredUniversity] = []
         
-        # Add reach (1 best match score)
-        for reach in viable_reaches[:1]:
+        # Add reach schools
+        for reach in viable_reaches[:reach_count]:
             recommendations.append(reach)
         
-        # Add targets (2)
-        for target in viable_targets[:2]:
+        # Add target schools
+        for target in viable_targets[:target_count]:
             recommendations.append(target)
         
-        # Add safeties (2 highest match score)
-        for safety in viable_safeties[:2]:
+        # Add safety schools
+        for safety in viable_safeties[:safety_count]:
             recommendations.append(safety)
         
         # If we don't have enough, fill from remaining
-        remaining_needed = count - len(recommendations)
+        remaining_needed = total_count - len(recommendations)
         if remaining_needed > 0:
             # Get all scored schools not yet selected
             selected_names = {r.university.name for r in recommendations}

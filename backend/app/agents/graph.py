@@ -66,7 +66,25 @@ async def router_node(state: RecommendationAgentState) -> Dict[str, Any]:
     ]
     is_follow_up = any(keyword in query for keyword in follow_up_keywords) and len(query) < 100
     
+    # Parse requested counts from query (e.g., "6 safeties", "3 reach schools")
+    import re
+    requested_counts = {"reach": 1, "target": 2, "safety": 2}  # Default 1-2-2
+    
+    # Pattern: "N safety/safeties/reach/target"
+    count_patterns = [
+        (r"(\d+)\s*(?:safety|safeties)", "safety"),
+        (r"(\d+)\s*(?:reach|reaches)", "reach"),
+        (r"(\d+)\s*(?:target|targets)", "target"),
+    ]
+    
+    for pattern, category in count_patterns:
+        match = re.search(pattern, query)
+        if match:
+            requested_counts[category] = min(int(match.group(1)), 10)  # Cap at 10
+            logger.info(f"Router: Detected request for {requested_counts[category]} {category} schools")
+    
     logger.info(f"Router: Student classified as {student_type}")
+    logger.info(f"Router: Requested counts = {requested_counts}")
     if is_follow_up:
         logger.info(f"Router: Detected follow-up question: '{query}'")
     
@@ -78,10 +96,11 @@ async def router_node(state: RecommendationAgentState) -> Dict[str, Any]:
         nationality = profile.get("nationality", "unknown")
         logger.info(f"Router: International student from {nationality}")
     
-    # Return routing decision and follow-up flag
+    # Return routing decision, follow-up flag, and requested counts
     return {
         "student_type": student_type,
         "is_follow_up": is_follow_up,
+        "requested_counts": requested_counts,
         "stream_content": []  # Reserved for final recommendations only
     }
 

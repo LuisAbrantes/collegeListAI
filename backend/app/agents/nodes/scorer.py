@@ -303,9 +303,10 @@ async def scorer_node(state: RecommendationAgentState) -> Dict[str, Any]:
                     student_major=context.intended_major,  # Use context's intended major
                 ))
         
-        # Score universities
+        # Score universities with requested counts
         scorer = MatchScorer()
-        recommendations = scorer.select_recommendations(context, universities)
+        counts = state.get("requested_counts", {"reach": 1, "target": 2, "safety": 2})
+        recommendations = scorer.select_recommendations(context, universities, counts=counts)
         
         logger.info(f"Scorer produced {len(recommendations)} recommendations")
         
