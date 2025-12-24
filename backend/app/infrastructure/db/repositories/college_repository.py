@@ -34,6 +34,7 @@ class CollegeUpdate(SQLModel):
     sat_75th: Optional[int] = None
     need_blind_international: Optional[bool] = None
     meets_full_need: Optional[bool] = None
+    major_strength: Optional[int] = None
     campus_setting: Optional[str] = None
     data_source: Optional[str] = None
 
@@ -117,6 +118,67 @@ class CollegeRepository(
         result = await self.session.execute(stmt)
         return result.scalar() or 0
     
+    async def get_fresh_colleges_smart(
+        self,
+        current_provider: str,
+        limit: int = 50
+    ) -> List[College]:
+        """
+        Get fresh colleges with Smart Correction.
+        
+        If current_provider is 'gemini', treat 'ollama_simulated' 
+        data as stale regardless of updated_at.
+        """
+        from sqlalchemy import and_
+        threshold = datetime.utcnow() - timedelta(days=STALENESS_DAYS)
+        
+        if current_provider == "gemini":
+            # Exclude ollama_simulated data even if "fresh"
+            stmt = (
+                select(College)
+                .where(and_(
+                    College.updated_at >= threshold,
+                    or_(
+                        College.data_source != "ollama_simulated",
+                        College.data_source.is_(None)
+                    )
+                ))
+                .order_by(College.updated_at.desc())
+                .limit(limit)
+            )
+        else:
+            # Normal freshness check
+            stmt = (
+                select(College)
+                .where(College.updated_at >= threshold)
+                .order_by(College.updated_at.desc())
+                .limit(limit)
+            )
+        
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+    
+    async def count_fresh_smart(self, current_provider: str) -> int:
+        """Count fresh colleges with Smart Correction."""
+        from sqlalchemy import func, and_
+        threshold = datetime.utcnow() - timedelta(days=STALENESS_DAYS)
+        
+        if current_provider == "gemini":
+            stmt = select(func.count()).select_from(College).where(and_(
+                College.updated_at >= threshold,
+                or_(
+                    College.data_source != "ollama_simulated",
+                    College.data_source.is_(None)
+                )
+            ))
+        else:
+            stmt = select(func.count()).select_from(College).where(
+                College.updated_at >= threshold
+            )
+        
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0
+    
     async def upsert(self, data: CollegeCreate) -> College:
         """
         Insert or update a college by name.
@@ -129,7 +191,7 @@ class CollegeRepository(
         if existing:
             # Update existing with new data
             for field in ['acceptance_rate', 'median_gpa', 'sat_25th', 'sat_75th',
-                         'need_blind_international', 'meets_full_need', 
+                         'need_blind_international', 'meets_full_need', 'major_strength',
                          'campus_setting', 'data_source', 'content']:
                 value = getattr(data, field, None)
                 if value is not None:

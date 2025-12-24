@@ -55,6 +55,13 @@ class CollegeBase(SQLModel):
         description="Whether meets 100% demonstrated need"
     )
     
+    # Program strength
+    major_strength: Optional[int] = Field(
+        default=None,
+        ge=1, le=10,
+        description="Program strength score 1-10 for student's major"
+    )
+    
     # Campus info
     campus_setting: Optional[str] = Field(
         default=None,

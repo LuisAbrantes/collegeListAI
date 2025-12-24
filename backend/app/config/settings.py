@@ -7,7 +7,7 @@ All environment variables are validated at startup.
 
 import os
 from functools import lru_cache
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     max_recommendations: int = 10
     similarity_threshold: float = 0.7
     
+    # LLM Provider Configuration
+    llm_provider: Literal["gemini", "ollama"] = "ollama"  # Default to ollama in dev
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "gemma3:27b"
+    
     # Rate Limiting
     rate_limit_requests: int = 100
     rate_limit_window_seconds: int = 60
@@ -77,11 +82,12 @@ class Settings(BaseSettings):
     
     @model_validator(mode="after")
     def validate_api_key(self) -> "Settings":
-        """Ensure at least one API key is provided."""
-        if not self.google_api_key and not self.gemini_api_key:
-            raise ValueError(
-                "Either GOOGLE_API_KEY or GEMINI_API_KEY must be set"
-            )
+        """Ensure at least one API key is provided when using Gemini."""
+        if self.llm_provider == "gemini":
+            if not self.google_api_key and not self.gemini_api_key:
+                raise ValueError(
+                    "Either GOOGLE_API_KEY or GEMINI_API_KEY must be set when using Gemini"
+                )
         # Normalize to google_api_key
         if not self.google_api_key and self.gemini_api_key:
             self.google_api_key = self.gemini_api_key

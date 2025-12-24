@@ -3,7 +3,7 @@ College Search Service for College List AI
 
 Implements Smart Sourcing RAG Pipeline:
 Phase 1: Local cache query
-Phase 2: Gemini discovery (if needed)
+Phase 2: Gemini/Ollama discovery (if needed)
 Phase 3: Auto-populate cache
 Phase 4: Return combined list for scoring
 """
@@ -13,6 +13,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
+import httpx
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
@@ -59,7 +60,15 @@ class CollegeSearchService:
     
     def __init__(self, repository: CollegeRepository):
         self.repository = repository
-        self.client = genai.Client(api_key=settings.google_api_key)
+        self._init_llm_client()
+    
+    def _init_llm_client(self):
+        """Initialize LLM client based on provider setting."""
+        if settings.llm_provider == "gemini":
+            self.client = genai.Client(api_key=settings.google_api_key)
+        else:
+            # Ollama uses HTTP requests, no persistent client needed
+            self.client = None
     
     async def hybrid_search(
         self,
@@ -80,12 +89,15 @@ class CollegeSearchService:
         Returns:
             List of UniversityData ready for scoring
         """
-        # Phase 1: Check local cache
-        logger.info("Phase 1: Checking local cache...")
-        fresh_count = await self.repository.count_fresh()
-        cached_colleges = await self.repository.get_fresh_colleges(limit=limit)
+        # Phase 1: Check local cache with Smart Correction
+        logger.info("Phase 1: Checking local cache with Smart Correction...")
+        fresh_count = await self.repository.count_fresh_smart(settings.llm_provider)
+        cached_colleges = await self.repository.get_fresh_colleges_smart(
+            current_provider=settings.llm_provider,
+            limit=limit
+        )
         
-        logger.info(f"Found {fresh_count} fresh colleges in cache")
+        logger.info(f"Found {fresh_count} fresh colleges in cache (provider: {settings.llm_provider})")
         
         universities: List[UniversityData] = []
         
@@ -95,7 +107,7 @@ class CollegeSearchService:
         
         # Phase 2: Discovery - only if cache is insufficient
         if fresh_count < MIN_CACHE_THRESHOLD:
-            logger.info(f"Phase 2: Cache below threshold ({fresh_count} < {MIN_CACHE_THRESHOLD}), triggering Gemini discovery...")
+            logger.info(f"Phase 2: Cache below threshold ({fresh_count} < {MIN_CACHE_THRESHOLD}), triggering discovery...")
             
             try:
                 web_results = await self._discover_from_web(major, profile, student_type)
@@ -123,6 +135,98 @@ class CollegeSearchService:
         return unique[:limit]
     
     async def _discover_from_web(
+        self,
+        major: str,
+        profile: Dict[str, Any],
+        student_type: str
+    ) -> List[UniversityData]:
+        """
+        Route to appropriate LLM provider based on settings.
+        
+        If Gemini fails with 429, logs a warning suggesting switch to Ollama.
+        """
+        if settings.llm_provider == "ollama":
+            logger.info("Using Ollama for local development discovery")
+            return await self._discover_via_ollama(major, profile, student_type)
+        
+        # Gemini path with 429 fallback warning
+        try:
+            return await self._discover_via_gemini(major, profile, student_type)
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                logger.warning(
+                    f"Gemini 429 rate limit hit: {e}. "
+                    "Consider switching to LLM_PROVIDER=ollama for local development."
+                )
+            raise
+    
+    async def _discover_via_ollama(
+        self,
+        major: str,
+        profile: Dict[str, Any],
+        student_type: str
+    ) -> List[UniversityData]:
+        """
+        Use local Ollama API for university discovery.
+        
+        Since Ollama is local, simulates latest 2025 admission data
+        for testing the Auto-Populate Cache flow.
+        """
+        gpa = profile.get("gpa", 3.5)
+        nationality = profile.get("nationality", "international")
+        is_domestic = student_type == "domestic"
+        
+        prompt = f"""You are simulating an expert college admissions database.
+
+IMPORTANT: Since this is a LOCAL DEVELOPMENT environment, simulate realistic 
+2025 admission data for testing purposes. Generate plausible statistics.
+
+Find 15 US universities for a student with these characteristics:
+- Intended Major: {major}
+- Current GPA: {gpa}/4.0
+- Student Type: {"Domestic US" if is_domestic else f"International from {nationality}"}
+
+Include a strategically diverse mix:
+- 3 highly selective (acceptance rate < 20%)
+- 5 moderately selective (acceptance rate 20-50%)
+- 7 less selective (acceptance rate > 50%)
+
+Return ONLY valid JSON matching this exact schema:
+{{
+  "universities": [
+    {{
+      "name": "Full University Name",
+      "acceptance_rate": 0.15,
+      "median_gpa": 3.9,
+      "sat_25th": 1400,
+      "sat_75th": 1550,
+      "major_strength_score": 8,
+      "need_blind_international": true
+    }}
+  ]
+}}"""
+
+        try:
+            logger.info("Ollama is generating the structured response...")
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                response = await client.post(
+                    f"{settings.ollama_base_url}/api/generate",
+                    json={
+                        "model": settings.ollama_model,
+                        "prompt": prompt,
+                        "format": "json",
+                        "stream": False,
+                    },
+                )
+                response.raise_for_status()
+                result = response.json()
+                return self._parse_structured_response(result.get("response", ""), major)
+        except httpx.HTTPError as e:
+            logger.error(f"Ollama API error: {e}")
+            raise RuntimeError(f"Ollama discovery failed: {e}")
+    
+    async def _discover_via_gemini(
         self,
         major: str,
         profile: Dict[str, Any],
@@ -271,6 +375,9 @@ Use the latest 2024/2025 admission data. Focus on {major} programs."""
     
     async def _save_to_cache(self, uni_data: UniversityData) -> None:
         """Save a university to the cache (auto-population)."""
+        # Determine data source based on current provider
+        data_source = "ollama_simulated" if settings.llm_provider == "ollama" else "gemini"
+        
         college_create = CollegeCreate(
             name=uni_data.name,
             acceptance_rate=uni_data.acceptance_rate,
@@ -278,7 +385,8 @@ Use the latest 2024/2025 admission data. Focus on {major} programs."""
             sat_25th=uni_data.sat_25th,
             sat_75th=uni_data.sat_75th,
             need_blind_international=uni_data.need_blind_international or False,
-            data_source="gemini",
+            major_strength=uni_data.major_ranking,  # Store program strength
+            data_source=data_source,
         )
         await self.repository.upsert(college_create)
     
@@ -295,6 +403,7 @@ Use the latest 2024/2025 admission data. Focus on {major} programs."""
             sat_25th=college.sat_25th,
             sat_75th=college.sat_75th,
             need_blind_international=college.need_blind_international,
+            major_ranking=college.major_strength,  # Read from cache
             data_source=college.data_source or "cache",
             has_major=True,
             student_major=major,

@@ -8,6 +8,7 @@ Produces formatted output with match transparency breakdown.
 import logging
 from typing import Dict, Any, List
 
+import httpx
 from google import genai
 from google.genai import types
 
@@ -118,6 +119,8 @@ async def recommender_node(state: RecommendationAgentState) -> Dict[str, Any]:
     not just a template. If the user asks about scholarships, it responds
     about scholarships. If about specific schools, it responds about those.
     
+    Supports both Gemini and Ollama providers based on settings.llm_provider.
+    
     Args:
         state: Current agent state (includes scored recommendations)
         
@@ -131,7 +134,22 @@ async def recommender_node(state: RecommendationAgentState) -> Dict[str, Any]:
         is_domestic = state["student_type"] == "domestic"
         is_follow_up = state.get("is_follow_up", False)
         
-        client = genai.Client(api_key=settings.google_api_key)
+        # Handle empty recommendations gracefully
+        if not recommendations:
+            logger.warning("Recommender received 0 recommendations from scorer. Returning fallback response.")
+            fallback_message = (
+                "I couldn't find specific university recommendations based on your profile. "
+                "This could be due to limited data in our cache. "
+                "Please try again or adjust your profile settings.\n\n"
+                "In the meantime, consider exploring:\n"
+                "- **Reach**: Top 20 universities in your field\n"
+                "- **Target**: State flagship universities\n"
+                "- **Safety**: Universities with higher acceptance rates in your major"
+            )
+            return {
+                "stream_content": [fallback_message],
+                "recommendations": [],
+            }
         
         # Build context from recommendations
         uni_summary = "\n".join([
@@ -202,18 +220,14 @@ Format the response as a clear college list with:
 For each school, include match percentage and brief reasoning.
 Use markdown formatting. Be conversational."""
 
-        # Generate response with Gemini
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.7,  # More creative, less deterministic
-                max_output_tokens=2000,
-                tools=[types.Tool(google_search=types.GoogleSearch())]
-            )
-        )
+        # Route to appropriate LLM provider
+        if settings.llm_provider == "ollama":
+            final_output = await _generate_with_ollama(prompt)
+        else:
+            final_output = await _generate_with_gemini(prompt)
         
-        final_output = response.text if response.text else format_recommendations_for_output(recommendations, state)
+        if not final_output:
+            final_output = format_recommendations_for_output(recommendations, state)
         
         logger.info(f"Recommender generated query-aware response for: '{user_query[:50]}...'")
         
@@ -234,6 +248,42 @@ Use markdown formatting. Be conversational."""
             "recommendations": recommendations,
             "error": str(e),
         }
+
+
+async def _generate_with_ollama(prompt: str) -> str:
+    """Generate response using local Ollama API."""
+    try:
+        logger.info("Ollama is generating the structured response...")
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(
+                f"{settings.ollama_base_url}/api/generate",
+                json={
+                    "model": settings.ollama_model,
+                    "prompt": prompt,
+                    "stream": False,
+                },
+            )
+            response.raise_for_status()
+            result = response.json()
+            return result.get("response", "")
+    except httpx.HTTPError as e:
+        logger.error(f"Ollama API error in recommender: {e}")
+        raise RuntimeError(f"Ollama generation failed: {e}")
+
+
+async def _generate_with_gemini(prompt: str) -> str:
+    """Generate response using Gemini API with search grounding."""
+    client = genai.Client(api_key=settings.google_api_key)
+    response = client.models.generate_content(
+        model=settings.gemini_model,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            temperature=0.7,
+            max_output_tokens=2000,
+            tools=[types.Tool(google_search=types.GoogleSearch())]
+        )
+    )
+    return response.text if response.text else ""
 
 
 def _extract_reasoning(content: str, uni_name: str) -> str:
