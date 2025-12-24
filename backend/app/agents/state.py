@@ -73,8 +73,8 @@ class RecommendationAgentState(TypedDict):
     research_results: Annotated[List[ResearchResult], operator.add]
     search_queries: Annotated[List[str], operator.add]
     
-    # Analysis phase
-    matched_universities: List[Dict[str, Any]]
+    # Analysis phase (accumulates via operator.add)
+    matched_universities: Annotated[List[Dict[str, Any]], operator.add]
     financial_aid_context: str
     
     # Output phase (accumulates via operator.add)

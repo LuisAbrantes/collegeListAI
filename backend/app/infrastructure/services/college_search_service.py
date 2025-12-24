@@ -370,7 +370,7 @@ Use the latest 2024/2025 admission data. Focus on {major} programs."""
             logger.error(f"Failed to parse Gemini JSON response: {e}")
             logger.debug(f"Raw response: {text[:500]}...")
         
-        logger.info(f"Parsed {len(universities)} universities from Gemini response")
+        logger.info(f"Parsed {len(universities)} universities from LLM response")
         return universities
     
     async def _save_to_cache(self, uni_data: UniversityData) -> None:

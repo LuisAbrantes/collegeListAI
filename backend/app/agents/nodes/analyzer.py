@@ -162,7 +162,6 @@ async def analyzer_node(state: RecommendationAgentState) -> Dict[str, Any]:
         
         return {
             "financial_aid_context": financial_context,
-            "matched_universities": matched_universities,
             "stream_content": []  # Reserved for final recommendations only
         }
         
@@ -171,6 +170,5 @@ async def analyzer_node(state: RecommendationAgentState) -> Dict[str, Any]:
         return {
             "error": f"Analysis failed: {str(e)}",
             "financial_aid_context": "",
-            "matched_universities": [],
             "stream_content": []  # Don't stream error status
         }

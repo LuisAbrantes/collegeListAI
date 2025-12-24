@@ -60,6 +60,10 @@ async def scorer_node(state: RecommendationAgentState) -> Dict[str, Any]:
         # Build student context
         context = build_student_context(state)
         
+        # Log incoming data for debugging
+        matched_count = len(state.get("matched_universities", []))
+        logger.info(f"Scorer received {matched_count} universities to score")
+        
         # Get universities from matched_universities (from researcher)
         universities: List[UniversityData] = []
         
