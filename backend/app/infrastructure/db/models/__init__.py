@@ -22,7 +22,6 @@ from app.infrastructure.db.models.college import (
     CollegeBase,
     CollegeCreate,
     CollegeRead,
-    CollegeMetadataSchema,
 )
 from app.infrastructure.db.models.chat_thread import ChatThread
 from app.infrastructure.db.models.chat_message import ChatMessage
@@ -44,8 +43,8 @@ __all__ = [
     "CollegeBase",
     "CollegeCreate",
     "CollegeRead",
-    "CollegeMetadataSchema",
     # Chat
     "ChatThread",
     "ChatMessage",
 ]
+

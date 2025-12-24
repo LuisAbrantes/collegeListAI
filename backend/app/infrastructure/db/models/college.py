@@ -1,47 +1,78 @@
 """
 College SQLModel for College List AI
 
-Database model for college/university cache with vector support.
-Note: Vector operations still handled by Supabase client (pgvector).
+Database model for college/university cache with structured stats.
+Enhanced for Smart Sourcing RAG Pipeline with staleness detection.
 """
 
 from datetime import datetime
 from typing import Optional, List
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from sqlalchemy import Column, JSON
+from sqlalchemy import Column, JSON, String, Float, Integer
 from sqlmodel import Field, SQLModel
 
 
-class CollegeMetadataSchema(SQLModel):
-    """
-    Schema for college metadata stored as JSON.
-    
-    This mirrors the domain CollegeMetadata model for serialization.
-    """
-    
-    acceptance_rate: Optional[float] = Field(default=None, ge=0.0, le=100.0)
-    need_blind_countries: Optional[List[str]] = None
-    need_aware_countries: Optional[List[str]] = None
-    application_deadline: Optional[str] = None
-    financial_aid_available: bool = True
-    avg_sat: Optional[int] = Field(default=None, ge=400, le=1600)
-    avg_gpa: Optional[float] = Field(default=None, ge=0.0, le=4.0)
-
-
 class CollegeBase(SQLModel):
-    """Base schema for College model."""
+    """Base schema for College model with structured stats."""
     
     name: str = Field(
         ...,
         max_length=255,
-        unique=True,
-        index=True,
+        sa_column=Column(String(255), unique=True, index=True),
         description="University name"
     )
+    
+    # Structured stats for scoring (no longer just JSON blob)
+    acceptance_rate: Optional[float] = Field(
+        default=None,
+        ge=0.0, le=1.0,
+        description="Acceptance rate as decimal (0.0-1.0)"
+    )
+    median_gpa: Optional[float] = Field(
+        default=None,
+        ge=0.0, le=4.0,
+        description="Median GPA of admitted students"
+    )
+    sat_25th: Optional[int] = Field(
+        default=None,
+        ge=400, le=1600,
+        description="25th percentile SAT score"
+    )
+    sat_75th: Optional[int] = Field(
+        default=None,
+        ge=400, le=1600,
+        description="75th percentile SAT score"
+    )
+    
+    # Financial aid info
+    need_blind_international: bool = Field(
+        default=False,
+        description="Whether need-blind for international students"
+    )
+    meets_full_need: bool = Field(
+        default=False,
+        description="Whether meets 100% demonstrated need"
+    )
+    
+    # Campus info
+    campus_setting: Optional[str] = Field(
+        default=None,
+        max_length=50,
+        description="URBAN, SUBURBAN, RURAL"
+    )
+    
+    # Data provenance
+    data_source: Optional[str] = Field(
+        default="gemini",
+        max_length=100,
+        description="Source: gemini, manual, common_data_set"
+    )
+    
+    # Legacy JSON field for additional metadata
     content: Optional[str] = Field(
         default=None,
-        description="JSON serialized metadata and description"
+        description="JSON serialized additional metadata"
     )
 
 
@@ -50,20 +81,22 @@ class College(CollegeBase, table=True):
     College cache database table model.
     
     Table name matches existing Supabase table 'colleges_cache'.
-    Note: 'embedding' vector field is handled by Supabase RPC, not SQLModel.
+    Enhanced with structured fields for RAG pipeline.
     """
     
     __tablename__ = "colleges_cache"
     
-    id: Optional[UUID] = Field(
-        default=None,
+    id: UUID = Field(
+        default_factory=uuid4,
         primary_key=True,
         description="Unique college identifier"
     )
     
-    created_at: Optional[datetime] = Field(
-        default=None,
-        description="Record creation timestamp"
+    # Note: created_at is managed by Supabase, not SQLModel
+    # We only track updated_at for staleness detection
+    updated_at: Optional[datetime] = Field(
+        default_factory=datetime.utcnow,
+        description="Last update timestamp for staleness detection"
     )
     
     class Config:
@@ -79,4 +112,5 @@ class CollegeRead(CollegeBase):
     """Schema for reading college with all fields."""
     
     id: UUID
-    created_at: datetime
+    updated_at: Optional[datetime]
+
