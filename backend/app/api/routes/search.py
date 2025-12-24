@@ -92,6 +92,9 @@ class RecommendRequest(BaseModel):
     
     # Exclusions
     excluded_colleges: Optional[List[str]] = None
+    
+    # Chat persistence
+    thread_id: Optional[str] = Field(None, description="Chat thread ID for persistence")
 
 
 class ExclusionRequest(BaseModel):

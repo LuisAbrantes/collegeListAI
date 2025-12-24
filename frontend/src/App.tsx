@@ -10,6 +10,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
 import { useProfile } from './hooks/useProfile';
+import { ChatProvider } from './contexts/ChatContext';
 import { AuthForm } from './components/AuthForm';
 import { ProfileForm } from './components/ProfileForm';
 import { Chat } from './components/Chat';
@@ -58,15 +59,17 @@ function App() {
 
   // Has profile -> show app with routing
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<Layout userProfile={profile} onSignOut={signOut} />}>
-          <Route path="/" element={<Chat profile={profile} />} />
-          <Route path="/profile" element={<Profile currentProfile={profile} />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+    <ChatProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route element={<Layout userProfile={profile} onSignOut={signOut} />}>
+            <Route path="/" element={<Chat profile={profile} />} />
+            <Route path="/profile" element={<Profile currentProfile={profile} />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </ChatProvider>
   );
 }
 

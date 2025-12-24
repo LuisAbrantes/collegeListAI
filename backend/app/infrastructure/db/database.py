@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import (
     AsyncEngine,
 )
 from sqlalchemy.pool import NullPool
+from sqlalchemy import text
 from sqlmodel import SQLModel
 
 from app.config.settings import settings
@@ -200,7 +201,7 @@ async def init_db() -> None:
     db = get_db_manager()
     # Verify connection works
     async with db.session_factory() as session:
-        await session.execute(SQLModel.text("SELECT 1"))
+        await session.execute(text("SELECT 1"))
 
 
 async def close_db() -> None:

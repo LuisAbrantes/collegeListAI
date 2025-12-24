@@ -24,6 +24,8 @@ from app.infrastructure.db.models.college import (
     CollegeRead,
     CollegeMetadataSchema,
 )
+from app.infrastructure.db.models.chat_thread import ChatThread
+from app.infrastructure.db.models.chat_message import ChatMessage
 
 
 __all__ = [
@@ -43,4 +45,7 @@ __all__ = [
     "CollegeCreate",
     "CollegeRead",
     "CollegeMetadataSchema",
+    # Chat
+    "ChatThread",
+    "ChatMessage",
 ]
