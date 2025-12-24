@@ -218,8 +218,13 @@ def parse_universities_from_research(
                     ))
     
     # Fallback: If we found fewer than 5 universities, add known top ones with real data
+    # RANDOMIZE to avoid always returning the same schools
     if len(universities) < 5:
-        for uni_name, uni_data in KNOWN_UNIVERSITIES.items():
+        import random
+        fallback_items = list(KNOWN_UNIVERSITIES.items())
+        random.shuffle(fallback_items)  # Shuffle for variety
+        
+        for uni_name, uni_data in fallback_items:
             if uni_name not in seen_names and len(universities) < 10:
                 seen_names.add(uni_name)
                 universities.append(UniversityData(

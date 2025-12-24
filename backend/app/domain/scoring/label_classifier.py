@@ -59,10 +59,14 @@ class LabelClassifier:
             if acceptance_rate is None or acceptance_rate > self.SAFETY_ACCEPTANCE_THRESHOLD:
                 return AdmissionLabel.SAFETY
         
-        # Rule 4: High acceptance rate (>50%) with decent stats = Safety
+        # Rule 4: High acceptance rate (>50%) with decent stats (>=40th percentile) = Safety
         if acceptance_rate is not None and acceptance_rate > 0.50:
             if percentile is None or percentile >= 40:
                 return AdmissionLabel.SAFETY
+        
+        # Rule 5: Very high acceptance rate (>65%) = Safety regardless of stats
+        if acceptance_rate is not None and acceptance_rate > 0.65:
+            return AdmissionLabel.SAFETY
         
         # Default: Target
         return AdmissionLabel.TARGET

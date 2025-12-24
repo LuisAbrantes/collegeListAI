@@ -26,9 +26,13 @@ export function Chat({ profile }: ChatProps) {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isStreaming) return;
+    const query = input.trim();
+    if (!query || isStreaming) return;
+    
+    // Clear input immediately to prevent double-submit
+    setInput('');
 
-    await sendMessage(input.trim(), {
+    await sendMessage(query, {
       citizenshipStatus: profile.citizenshipStatus,
       nationality: profile.nationality || undefined,
       gpa: profile.gpa,
@@ -48,8 +52,6 @@ export function Chat({ profile }: ChatProps) {
       apClassCount: profile.apClassCount,
       apClasses: profile.apClasses,
     });
-    
-    setInput('');
   };
 
   return (

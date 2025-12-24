@@ -162,38 +162,46 @@ class MatchScorer:
         # Score all universities
         all_scored = self.score_universities(context, universities)
         
-        # Filter by minimum threshold
-        viable = [s for s in all_scored if s.match_score >= self.MIN_MATCH_THRESHOLD]
+        # Separate by label BEFORE threshold filtering (needed for Safety guarantee)
+        all_reaches = [s for s in all_scored if s.label == AdmissionLabel.REACH]
+        all_targets = [s for s in all_scored if s.label == AdmissionLabel.TARGET]
+        all_safeties = [s for s in all_scored if s.label == AdmissionLabel.SAFETY]
         
-        # Separate by label
-        reaches = [s for s in viable if s.label == AdmissionLabel.REACH]
-        targets = [s for s in viable if s.label == AdmissionLabel.TARGET]
-        safeties = [s for s in viable if s.label == AdmissionLabel.SAFETY]
+        # Filter by minimum threshold for Reach/Target only
+        viable_reaches = [s for s in all_reaches if s.match_score >= self.MIN_MATCH_THRESHOLD]
+        viable_targets = [s for s in all_targets if s.match_score >= self.MIN_MATCH_THRESHOLD]
+        # Safety schools: lower threshold (50) to ensure we always have options
+        viable_safeties = [s for s in all_safeties if s.match_score >= 50.0]
+        
+        # If not enough Safety schools, take best from all_safeties regardless of threshold
+        if len(viable_safeties) < 2 and len(all_safeties) > len(viable_safeties):
+            viable_safeties = sorted(all_safeties, key=lambda s: s.match_score, reverse=True)[:2]
         
         # Build final list: 1 Reach, 2 Target, 2 Safety
         recommendations: List[ScoredUniversity] = []
         
         # Add reach (1 best match score)
-        for reach in reaches[:1]:
+        for reach in viable_reaches[:1]:
             recommendations.append(reach)
         
         # Add targets (2)
-        for target in targets[:2]:
+        for target in viable_targets[:2]:
             recommendations.append(target)
         
         # Add safeties (2 highest match score)
-        for safety in safeties[:2]:
+        for safety in viable_safeties[:2]:
             recommendations.append(safety)
         
         # If we don't have enough, fill from remaining
         remaining_needed = count - len(recommendations)
         if remaining_needed > 0:
-            # Get all not yet selected
+            # Get all scored schools not yet selected
             selected_names = {r.university.name for r in recommendations}
             remaining = [
-                s for s in viable 
-                if s.university.name not in selected_names
+                s for s in all_scored 
+                if s.university.name not in selected_names and s.match_score >= 50.0
             ]
+            remaining.sort(key=lambda s: s.match_score, reverse=True)
             
             # Add best remaining
             for extra in remaining[:remaining_needed]:

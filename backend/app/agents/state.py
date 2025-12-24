@@ -66,6 +66,7 @@ class RecommendationAgentState(TypedDict):
     
     # Routing
     student_type: Literal["domestic", "international"]
+    is_follow_up: bool  # True if query is a follow-up question
     
     # Research phase (accumulates via operator.add)
     research_results: Annotated[List[ResearchResult], operator.add]
@@ -107,6 +108,7 @@ def create_initial_state(
         profile=profile,
         excluded_colleges=excluded_colleges or [],
         student_type="domestic",  # Will be set by router
+        is_follow_up=False,  # Will be set by router
         research_results=[],
         search_queries=[],
         matched_universities=[],

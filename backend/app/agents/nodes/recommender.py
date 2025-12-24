@@ -112,10 +112,11 @@ def _format_single_recommendation(rec: Dict[str, Any], is_domestic: bool) -> str
 
 async def recommender_node(state: RecommendationAgentState) -> Dict[str, Any]:
     """
-    Recommender node: Generates final college recommendations.
+    Recommender node: Generates QUERY-AWARE college recommendations.
     
-    Uses pre-scored candidates from scorer node to generate
-    detailed recommendations with match transparency.
+    IMPORTANT: This node generates responses based on the ACTUAL user query,
+    not just a template. If the user asks about scholarships, it responds
+    about scholarships. If about specific schools, it responds about those.
     
     Args:
         state: Current agent state (includes scored recommendations)
@@ -125,68 +126,96 @@ async def recommender_node(state: RecommendationAgentState) -> Dict[str, Any]:
     """
     try:
         recommendations = state.get("recommendations", [])
+        user_query = state.get("user_query", "").lower()
+        profile = state["profile"]
+        is_domestic = state["student_type"] == "domestic"
+        is_follow_up = state.get("is_follow_up", False)
         
-        # If we have scored recommendations, enhance with AI reasoning
-        if recommendations:
-            client = genai.Client(api_key=settings.google_api_key)
-            
-            # Build enhancement prompt
-            profile = state["profile"]
-            is_domestic = state["student_type"] == "domestic"
-            
-            uni_names = [r.get("name", "") for r in recommendations[:5]]
-            
-            enhance_prompt = f"""Provide brief (1-2 sentence) personalized reasoning for why each of these universities fits this student:
+        client = genai.Client(api_key=settings.google_api_key)
+        
+        # Build context from recommendations
+        uni_summary = "\n".join([
+            f"- {r.get('name')}: {r.get('label')} school, {r.get('match_score', 0):.0f}% match, Financial: {r.get('match_transparency', {}).get('financial_fit', 0):.0f}%"
+            for r in recommendations[:5]
+        ])
+        
+        # Determine intent from query
+        is_scholarship_query = any(kw in user_query for kw in 
+            ["scholarship", "financial", "aid", "cost", "afford", "money", "fee", "tuition"])
+        is_specific_school_query = any(kw in user_query for kw in 
+            ["mit", "stanford", "harvard", "berkeley", "cmu", "carnegie", "georgia tech"])
+        is_chance_query = any(kw in user_query for kw in 
+            ["chance", "odds", "likely", "probability", "can i get", "will i"])
+        
+        # Build appropriate prompt based on intent
+        if is_follow_up or is_scholarship_query:
+            prompt = f"""You are a college advisor. The student asked: "{state.get('user_query', '')}"
 
 Student Profile:
 - Major: {profile.get('major', 'Undeclared')}
 - GPA: {profile.get('gpa', 3.5)}/4.0
-- Type: {"Domestic" if is_domestic else "International"} student
-{f"- State: {profile.get('state_of_residence')}" if is_domestic else f"- Nationality: {profile.get('nationality')}"}
-- Financial Need: {profile.get('household_income_tier', 'MEDIUM')}
+- Type: {"Domestic" if is_domestic else f"International from {profile.get('nationality', 'unknown')}"}
+- Income Tier: {profile.get('household_income_tier', 'MEDIUM')}
 
-Universities to explain:
-{chr(10).join(f"- {name}" for name in uni_names)}
+Previously recommended schools:
+{uni_summary}
 
-For each university, provide:
-1. A brief reasoning why it's a good fit (considering academics, culture, opportunities)
-2. A one-line financial aid summary for this student type
+ANSWER THE SPECIFIC QUESTION. If about scholarships, explain:
+1. Which of these schools offer best financial aid for this student
+2. Specific scholarship opportunities (need-blind, merit scholarships)
+3. Estimated cost after aid
 
-Format as:
-UNIVERSITY_NAME
-Reasoning: [your reasoning]
-Financial: [financial summary]
+Be conversational, specific, and helpful. Use markdown formatting.
+DO NOT just repeat the list of schools. Answer the question directly."""
 
-Keep it concise and actionable."""
+        elif is_chance_query:
+            prompt = f"""You are a college advisor. The student asked: "{state.get('user_query', '')}"
 
-            # Get AI enhancement
-            response = client.models.generate_content(
-                model=settings.gemini_model,
-                contents=enhance_prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.5,
-                    max_output_tokens=1500,
-                    tools=[types.Tool(google_search=types.GoogleSearch())]
-                )
+Student Profile:
+- GPA: {profile.get('gpa', 3.5)}/4.0
+- SAT: {profile.get('sat_score', 'Not provided')}
+- Major: {profile.get('major', 'Undeclared')}
+
+Previously recommended schools with admission probability:
+{uni_summary}
+
+Provide a realistic chance assessment. Be encouraging but honest.
+Explain what affects their chances at each tier (Reach/Target/Safety)."""
+
+        else:
+            # Default: Generate college list with context
+            prompt = f"""You are a college advisor. Generate recommendations for: "{state.get('user_query', '')}"
+
+Student Profile:
+- Major: {profile.get('major', 'Undeclared')}
+- GPA: {profile.get('gpa', 3.5)}/4.0
+- Type: {"Domestic" if is_domestic else f"International from {profile.get('nationality', 'unknown')}"}
+
+Based on analysis, here are the best matches:
+{uni_summary}
+
+Format the response as a clear college list with:
+- 🎯 **Reach Schools** (1 school)
+- ✅ **Target Schools** (2 schools)
+- 🛡️ **Safety Schools** (2 schools)
+
+For each school, include match percentage and brief reasoning.
+Use markdown formatting. Be conversational."""
+
+        # Generate response with Gemini
+        response = client.models.generate_content(
+            model=settings.gemini_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.7,  # More creative, less deterministic
+                max_output_tokens=2000,
+                tools=[types.Tool(google_search=types.GoogleSearch())]
             )
-            
-            # Parse and attach reasoning to recommendations
-            if response.text:
-                enhanced_content = response.text
-                for rec in recommendations:
-                    name = rec.get("name", "")
-                    # Simple extraction - find content after university name
-                    if name in enhanced_content:
-                        # Extract reasoning
-                        rec["reasoning"] = _extract_reasoning(enhanced_content, name)
-                        rec["financial_aid_summary"] = _extract_financial(
-                            enhanced_content, name, is_domestic
-                        )
+        )
         
-        # Format final output
-        final_output = format_recommendations_for_output(recommendations, state)
+        final_output = response.text if response.text else format_recommendations_for_output(recommendations, state)
         
-        logger.info(f"Recommender formatted {len(recommendations)} recommendations")
+        logger.info(f"Recommender generated query-aware response for: '{user_query[:50]}...'")
         
         return {
             "stream_content": [final_output],

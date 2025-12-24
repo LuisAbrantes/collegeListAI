@@ -36,10 +36,12 @@ logger = logging.getLogger(__name__)
 
 async def router_node(state: RecommendationAgentState) -> Dict[str, Any]:
     """
-    Router node: Determines student type and sets routing context.
+    Router node: Determines student type and detects follow-up questions.
     
     This is the first node in the workflow. It examines the student
-    profile and sets the student_type for conditional branching.
+    profile and user query to determine:
+    1. Student type (domestic vs international)
+    2. Whether this is a follow-up question (scholarship details, etc.)
     
     Note: We intentionally don't add greeting to stream_content here.
     The stream_content is reserved for the final recommendation output only.
@@ -49,13 +51,24 @@ async def router_node(state: RecommendationAgentState) -> Dict[str, Any]:
         state: Current agent state
         
     Returns:
-        State updates with student_type set
+        State updates with student_type and optional follow-up flag
     """
     profile = state["profile"]
+    query = state.get("user_query", "").lower()
     is_domestic = is_domestic_student(profile)
     student_type: Literal["domestic", "international"] = "domestic" if is_domestic else "international"
     
+    # Detect follow-up question patterns
+    follow_up_keywords = [
+        "what about", "how about", "tell me more", "explain",
+        "scholarship", "scholarships", "financial aid", "aid package",
+        "why", "cost", "tuition", "price", "fee",
+    ]
+    is_follow_up = any(keyword in query for keyword in follow_up_keywords) and len(query) < 100
+    
     logger.info(f"Router: Student classified as {student_type}")
+    if is_follow_up:
+        logger.info(f"Router: Detected follow-up question: '{query}'")
     
     # Log context for debugging (not streamed to user)
     if is_domestic:
@@ -65,10 +78,10 @@ async def router_node(state: RecommendationAgentState) -> Dict[str, Any]:
         nationality = profile.get("nationality", "unknown")
         logger.info(f"Router: International student from {nationality}")
     
-    # Return only the routing decision - no stream content
-    # This prevents "thinking" text from appearing in response
+    # Return routing decision and follow-up flag
     return {
         "student_type": student_type,
+        "is_follow_up": is_follow_up,
         "stream_content": []  # Reserved for final recommendations only
     }
 
