@@ -8,13 +8,14 @@ Phase 3: Auto-populate cache
 Phase 4: Return combined list for scoring
 """
 
+import json
 import logging
-import re
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
 from google import genai
 from google.genai import types
+from pydantic import BaseModel, Field
 
 from app.config.settings import settings
 from app.infrastructure.db.models.college import College, CollegeCreate
@@ -25,6 +26,24 @@ logger = logging.getLogger(__name__)
 
 # Minimum fresh colleges before triggering web search
 MIN_CACHE_THRESHOLD = 10
+
+
+# ============== Structured Output Schemas ==============
+
+class UniversityExtraction(BaseModel):
+    """Schema for a single university extracted from Gemini response."""
+    name: str = Field(..., description="Full university name")
+    acceptance_rate: float = Field(..., ge=0.0, le=1.0, description="Acceptance rate as decimal (e.g., 0.15 for 15%)")
+    median_gpa: float = Field(..., ge=0.0, le=4.0, description="Median GPA of ADMITTED students")
+    sat_25th: int = Field(..., ge=400, le=1600, description="25th percentile SAT score of admitted students")
+    sat_75th: int = Field(..., ge=400, le=1600, description="75th percentile SAT score of admitted students")
+    major_strength_score: int = Field(..., ge=1, le=10, description="Program strength rating 1-10 for student's major")
+    need_blind_international: bool = Field(..., description="Whether the school is need-blind for international students")
+
+
+class GeminiUniversityResponse(BaseModel):
+    """Schema for the complete Gemini structured response."""
+    universities: List[UniversityExtraction] = Field(..., description="List of universities with admission data")
 
 
 class CollegeSearchService:
@@ -110,33 +129,89 @@ class CollegeSearchService:
         student_type: str
     ) -> List[UniversityData]:
         """
-        Use Gemini Search Grounding to discover universities.
+        Use Gemini Search Grounding with Structured Output to discover universities.
         
-        Parses response to extract structured university data.
+        Returns validated UniversityData objects parsed from JSON response.
         """
         gpa = profile.get("gpa", 3.5)
         nationality = profile.get("nationality", "international")
         is_domestic = student_type == "domestic"
         
-        # Build discovery prompt
-        prompt = f"""Find 15 US universities for a student with these characteristics:
-- Major: {major}
-- GPA: {gpa}/4.0
-- Student Type: {"Domestic US" if is_domestic else f"International from {nationality}"}
+        # Build discovery prompt with LATEST DATA requirements
+        prompt = f"""You are an expert college admissions counselor with access to the LATEST admission statistics.
 
-For each university, provide this information in a structured format:
-UNIVERSITY: [Name]
-ACCEPTANCE_RATE: [percentage, e.g. 15%]
-MEDIAN_GPA: [e.g. 3.8]
-SAT_RANGE: [e.g. 1400-1550]
-NEED_BLIND_INTL: [Yes/No]
+CRITICAL REQUIREMENTS:
+1. Use data from the LATEST admission cycle (Class of 2028/2029, admitted Fall 2024/2025)
+2. Report the MEDIAN or AVERAGE statistics of ADMITTED students, NOT minimum requirements
+3. SAT scores must be the 25th and 75th percentile of ENROLLED students
+4. GPA must be the median GPA of admitted students on a 4.0 scale
 
-Include a diverse mix:
-- 3 highly selective (acceptance < 20%)
-- 5 moderately selective (20-50%)
-- 7 less selective (> 50%)
+Find 15 US universities for a student with these characteristics:
+- Intended Major: {major}
+- Current GPA: {gpa}/4.0
+- Student Type: {"Domestic US" if is_domestic else f"International student from {nationality}"}
 
-Focus on schools with strong {major} programs. Use current 2025 data."""
+Include a strategically diverse mix:
+- 3 highly selective universities (acceptance rate < 20%)
+- 5 moderately selective universities (acceptance rate 20-50%)
+- 7 less selective universities (acceptance rate > 50%)
+
+For EACH university, provide:
+- Full official university name
+- Acceptance rate as a decimal (e.g., 0.15 for 15%)
+- Median GPA of ADMITTED students (not minimum required)
+- 25th percentile SAT score of admitted students
+- 75th percentile SAT score of admitted students
+- Program strength score (1-10) for {major} specifically
+- Whether the school is need-blind for international student admissions
+
+IMPORTANT: Focus on universities with strong {major} programs. Use real 2024/2025 admission data."""
+
+        try:
+            response = self.client.models.generate_content(
+                model=settings.gemini_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.2,
+                    max_output_tokens=4000,
+                    response_mime_type="application/json",
+                    response_schema=GeminiUniversityResponse,
+                    tools=[types.Tool(google_search=types.GoogleSearch())]
+                )
+            )
+            
+            # Parse structured JSON response
+            return self._parse_structured_response(response.text or "", major)
+            
+        except Exception as e:
+            logger.error(f"Gemini structured output failed: {e}")
+            # Fallback: try without structured output
+            return await self._discover_from_web_fallback(major, profile, student_type)
+    
+    async def _discover_from_web_fallback(
+        self,
+        major: str,
+        profile: Dict[str, Any],
+        student_type: str
+    ) -> List[UniversityData]:
+        """Fallback discovery without structured output (basic JSON parsing)."""
+        gpa = profile.get("gpa", 3.5)
+        nationality = profile.get("nationality", "international")
+        is_domestic = student_type == "domestic"
+        
+        prompt = f"""Find 15 US universities for a {major} student with {gpa} GPA.
+Student type: {"Domestic" if is_domestic else f"International from {nationality}"}
+
+Return a JSON object with a "universities" array containing objects with these fields:
+- name (string): Full university name
+- acceptance_rate (number): Decimal 0-1, e.g. 0.15 for 15%
+- median_gpa (number): Median GPA of admitted students
+- sat_25th (integer): 25th percentile SAT
+- sat_75th (integer): 75th percentile SAT
+- major_strength_score (integer): 1-10 program strength for {major}
+- need_blind_international (boolean): Need-blind for international students
+
+Use the latest 2024/2025 admission data. Focus on {major} programs."""
 
         response = self.client.models.generate_content(
             model=settings.gemini_model,
@@ -148,75 +223,48 @@ Focus on schools with strong {major} programs. Use current 2025 data."""
             )
         )
         
-        # Parse response into UniversityData objects
-        return self._parse_gemini_response(response.text or "", major)
+        return self._parse_structured_response(response.text or "", major)
     
-    def _parse_gemini_response(
+    def _parse_structured_response(
         self,
         text: str,
         major: str
     ) -> List[UniversityData]:
         """
-        Parse Gemini response into structured UniversityData.
+        Parse Gemini JSON response into structured UniversityData.
         
-        Extracts: name, acceptance_rate, median_gpa, SAT range.
+        Handles both structured output and fallback JSON formats.
         """
         universities = []
         
-        # Pattern to extract university blocks
-        uni_pattern = r"UNIVERSITY:\s*(.+?)(?:\n|$)"
-        rate_pattern = r"ACCEPTANCE_RATE:\s*([\d.]+)%?"
-        gpa_pattern = r"MEDIAN_GPA:\s*([\d.]+)"
-        sat_pattern = r"SAT_RANGE:\s*(\d+)\s*[-–]\s*(\d+)"
-        need_blind_pattern = r"NEED_BLIND_INTL:\s*(Yes|No)"
-        
-        # Split by UNIVERSITY: marker
-        blocks = re.split(r"(?=UNIVERSITY:)", text, flags=re.IGNORECASE)
-        
-        for block in blocks:
-            if not block.strip():
-                continue
+        try:
+            # Parse JSON response
+            data = json.loads(text)
             
-            # Extract name
-            name_match = re.search(uni_pattern, block, re.IGNORECASE)
-            if not name_match:
-                continue
+            # Handle both direct list and nested object formats
+            uni_list = data.get("universities", []) if isinstance(data, dict) else data
             
-            name = name_match.group(1).strip()
+            for uni in uni_list:
+                try:
+                    universities.append(UniversityData(
+                        name=uni.get("name", "Unknown University"),
+                        acceptance_rate=float(uni.get("acceptance_rate", 0.5)),
+                        median_gpa=float(uni.get("median_gpa", 3.5)),
+                        sat_25th=int(uni.get("sat_25th", 1200)),
+                        sat_75th=int(uni.get("sat_75th", 1400)),
+                        major_ranking=uni.get("major_strength_score"),
+                        need_blind_international=bool(uni.get("need_blind_international", False)),
+                        data_source="gemini",
+                        has_major=True,
+                        student_major=major,
+                    ))
+                except (KeyError, ValueError, TypeError) as e:
+                    logger.warning(f"Skipping malformed university entry: {e}")
+                    continue
             
-            # Extract stats
-            acceptance_rate = None
-            rate_match = re.search(rate_pattern, block)
-            if rate_match:
-                acceptance_rate = float(rate_match.group(1)) / 100.0
-            
-            median_gpa = None
-            gpa_match = re.search(gpa_pattern, block)
-            if gpa_match:
-                median_gpa = float(gpa_match.group(1))
-            
-            sat_25th, sat_75th = None, None
-            sat_match = re.search(sat_pattern, block)
-            if sat_match:
-                sat_25th = int(sat_match.group(1))
-                sat_75th = int(sat_match.group(2))
-            
-            need_blind = False
-            need_blind_match = re.search(need_blind_pattern, block, re.IGNORECASE)
-            if need_blind_match:
-                need_blind = need_blind_match.group(1).lower() == "yes"
-            
-            universities.append(UniversityData(
-                name=name,
-                acceptance_rate=acceptance_rate,
-                median_gpa=median_gpa,
-                sat_25th=sat_25th,
-                sat_75th=sat_75th,
-                need_blind_international=need_blind,
-                data_source="gemini",
-                has_major=True,
-                student_major=major,
-            ))
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Gemini JSON response: {e}")
+            logger.debug(f"Raw response: {text[:500]}...")
         
         logger.info(f"Parsed {len(universities)} universities from Gemini response")
         return universities
