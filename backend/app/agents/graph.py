@@ -36,12 +36,13 @@ logger = logging.getLogger(__name__)
 
 async def router_node(state: RecommendationAgentState) -> Dict[str, Any]:
     """
-    Router node: Determines student type and detects follow-up questions.
+    Router node: Determines student type, detects follow-up questions, and maintenance commands.
     
     This is the first node in the workflow. It examines the student
     profile and user query to determine:
     1. Student type (domestic vs international)
     2. Whether this is a follow-up question (scholarship details, etc.)
+    3. Maintenance commands (force refresh/update database)
     
     Note: We intentionally don't add greeting to stream_content here.
     The stream_content is reserved for the final recommendation output only.
@@ -51,12 +52,26 @@ async def router_node(state: RecommendationAgentState) -> Dict[str, Any]:
         state: Current agent state
         
     Returns:
-        State updates with student_type and optional follow-up flag
+        State updates with student_type, follow-up flag, and force_refresh flag
     """
     profile = state["profile"]
     query = state.get("user_query", "").lower()
     is_domestic = is_domestic_student(profile)
     student_type: Literal["domestic", "international"] = "domestic" if is_domestic else "international"
+    
+    # Detect MAINTENANCE COMMANDS (force refresh / update database)
+    # Pattern: User wants to bypass cache and fetch fresh data from web
+    maintenance_keywords = [
+        "atualizar banco", "atualiza banco", "atualizar dados", "atualiza dados",
+        "refresh data", "refresh database", "update database", "update db",
+        "buscar dados reais", "dados reais", "buscar novos dados",
+        "force refresh", "forçar atualização", "limpar cache", "clear cache",
+        "fetch real data", "get real data", "sync database", "sincronizar"
+    ]
+    force_refresh = any(keyword in query for keyword in maintenance_keywords)
+    
+    if force_refresh:
+        logger.info(f"Router: MAINTENANCE MODE - Force refresh requested for query: '{query}'")
     
     # Detect follow-up question patterns
     follow_up_keywords = [
@@ -96,10 +111,11 @@ async def router_node(state: RecommendationAgentState) -> Dict[str, Any]:
         nationality = profile.get("nationality", "unknown")
         logger.info(f"Router: International student from {nationality}")
     
-    # Return routing decision, follow-up flag, and requested counts
+    # Return routing decision, follow-up flag, force_refresh, and requested counts
     return {
         "student_type": student_type,
         "is_follow_up": is_follow_up,
+        "force_refresh": force_refresh,
         "requested_counts": requested_counts,
         "stream_content": []  # Reserved for final recommendations only
     }

@@ -38,8 +38,12 @@ async def researcher_node(state: RecommendationAgentState) -> Dict[str, Any]:
         profile = state["profile"]
         major = profile.get("major", "General Studies")
         student_type = state["student_type"]
+        force_refresh = state.get("force_refresh", False)
         
-        logger.info(f"Researcher: Starting hybrid search for {major} ({student_type})")
+        if force_refresh:
+            logger.info(f"Researcher: MAINTENANCE MODE - Force refresh for {major}")
+        else:
+            logger.info(f"Researcher: Starting hybrid search for {major} ({student_type})")
         
         # Get database session and create service
         db = get_db_manager()
@@ -47,12 +51,13 @@ async def researcher_node(state: RecommendationAgentState) -> Dict[str, Any]:
             repository = CollegeRepository(session)
             search_service = CollegeSearchService(repository)
             
-            # Execute hybrid search (cache-first, then web)
+            # Execute hybrid search (cache-first, then web) or force refresh
             universities = await search_service.hybrid_search(
                 major=major,
                 profile=profile,
                 student_type=student_type,
-                limit=20
+                limit=20,
+                force_refresh=force_refresh
             )
             
             # Commit any new entries added to cache
@@ -77,14 +82,18 @@ async def researcher_node(state: RecommendationAgentState) -> Dict[str, Any]:
                     "uri": f"https://www.google.com/search?q={uni.name.replace(' ', '+')}"
                 })
         
-        logger.info(f"Researcher: Found {len(universities)} universities ({len(sources)} from web)")
+        # Log result based on mode
+        if force_refresh:
+            logger.info(f"Researcher: DATABASE UPDATED - {len(universities)} universities refreshed for {major}")
+        else:
+            logger.info(f"Researcher: Found {len(universities)} universities ({len(sources)} from web)")
         
         return {
             "matched_universities": matched,
             "research_results": [{
                 "query": f"Universities for {major}",
                 "sources": sources,
-                "content": f"Found {len(universities)} universities via hybrid search"
+                "content": f"{'Refreshed' if force_refresh else 'Found'} {len(universities)} universities via {'force refresh' if force_refresh else 'hybrid search'}"
             }],
             "search_queries": [f"best {major} programs"],
             "grounding_sources": sources,

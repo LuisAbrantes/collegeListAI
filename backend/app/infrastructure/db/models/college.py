@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Optional, List
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, JSON, String, Float, Integer
+from sqlalchemy import Column, JSON, String, Float, Integer, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -19,8 +19,16 @@ class CollegeBase(SQLModel):
     name: str = Field(
         ...,
         max_length=255,
-        sa_column=Column(String(255), unique=True, index=True),
+        index=True,
         description="University name"
+    )
+    
+    # Major-segmented cache: each (name, target_major) is unique
+    target_major: str = Field(
+        default="general",
+        max_length=100,
+        index=True,
+        description="Target major for this cache entry (e.g., 'Computer Science', 'Physics')"
     )
     
     # Structured stats for scoring (no longer just JSON blob)
@@ -89,9 +97,13 @@ class College(CollegeBase, table=True):
     
     Table name matches existing Supabase table 'colleges_cache'.
     Enhanced with structured fields for RAG pipeline.
+    Uses composite unique constraint on (name, target_major) for major-segmented cache.
     """
     
     __tablename__ = "colleges_cache"
+    __table_args__ = (
+        UniqueConstraint('name', 'target_major', name='colleges_cache_name_major_unique'),
+    )
     
     id: UUID = Field(
         default_factory=uuid4,

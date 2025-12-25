@@ -75,7 +75,8 @@ class CollegeSearchService:
         major: str,
         profile: Dict[str, Any],
         student_type: str,
-        limit: int = 20
+        limit: int = 20,
+        force_refresh: bool = False
     ) -> List[UniversityData]:
         """
         Execute hybrid search: cache-first, then web discovery.
@@ -85,21 +86,46 @@ class CollegeSearchService:
             profile: Student profile dict
             student_type: 'domestic' or 'international'
             limit: Max universities to return
+            force_refresh: If True, bypass cache and force web discovery
             
         Returns:
             List of UniversityData ready for scoring
         """
-        # Phase 1: Check local cache with Smart Correction
-        logger.info("Phase 1: Checking local cache with Smart Correction...")
-        fresh_count = await self.repository.count_fresh_smart(settings.llm_provider)
+        universities: List[UniversityData] = []
+        
+        # Force refresh mode: skip cache entirely
+        if force_refresh:
+            logger.info(f"FORCE REFRESH MODE: Bypassing cache for '{major}', fetching real data from web...")
+            try:
+                web_results = await self._discover_from_web(major, profile, student_type)
+                
+                # Phase 3: Auto-populate cache with fresh data
+                logger.info(f"Phase 3: Auto-populating cache with {len(web_results)} fresh discoveries...")
+                for uni_data in web_results:
+                    await self._save_to_cache(uni_data)
+                    universities.append(uni_data)
+                
+                logger.info(f"FORCE REFRESH COMPLETE: {len(universities)} universities fetched and cached for '{major}'")
+                return universities[:limit]
+                
+            except Exception as e:
+                logger.error(f"Force refresh failed: {e}")
+                # Fall back to normal cache flow
+                logger.info("Falling back to cache after force refresh failure...")
+        
+        # Phase 1: Check local cache with Smart Correction for THIS MAJOR
+        logger.info(f"Phase 1: Checking local cache for major '{major}' with Smart Correction...")
+        fresh_count = await self.repository.count_fresh_smart(
+            current_provider=settings.llm_provider,
+            target_major=major
+        )
         cached_colleges = await self.repository.get_fresh_colleges_smart(
             current_provider=settings.llm_provider,
+            target_major=major,
             limit=limit
         )
         
-        logger.info(f"Found {fresh_count} fresh colleges in cache (provider: {settings.llm_provider})")
-        
-        universities: List[UniversityData] = []
+        logger.info(f"Found {fresh_count} fresh colleges for '{major}' in cache (provider: {settings.llm_provider})")
         
         # Convert cached colleges to UniversityData
         for college in cached_colleges:
@@ -367,19 +393,28 @@ Use the latest 2024/2025 admission data. Focus on {major} programs."""
                     continue
             
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemini JSON response: {e}")
+            logger.error(f"Failed to parse LLM JSON response: {e}")
             logger.debug(f"Raw response: {text[:500]}...")
         
         logger.info(f"Parsed {len(universities)} universities from LLM response")
         return universities
     
     async def _save_to_cache(self, uni_data: UniversityData) -> None:
-        """Save a university to the cache (auto-population)."""
+        """
+        Save a university to the cache (auto-population).
+        
+        Uses the student_major from UniversityData as target_major key.
+        Each (name, major) combination is stored separately.
+        """
         # Determine data source based on current provider
         data_source = "ollama_simulated" if settings.llm_provider == "ollama" else "gemini"
         
+        # Use the student's major as target_major for segmented cache
+        target_major = uni_data.student_major or "general"
+        
         college_create = CollegeCreate(
             name=uni_data.name,
+            target_major=target_major,  # Major-segmented cache key
             acceptance_rate=uni_data.acceptance_rate,
             median_gpa=uni_data.median_gpa,
             sat_25th=uni_data.sat_25th,
