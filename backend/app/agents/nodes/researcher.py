@@ -2,9 +2,9 @@
 Researcher Node for College List AI
 
 Implements HYBRID SEARCH strategy via CollegeSearchService:
-- Phase 1: Local cache query (fast)
+- Phase 1: Local cache query (fast, via JOINed tables)
 - Phase 2: Gemini grounding (if cache insufficient)
-- Phase 3: Auto-populate cache (Data Flywheel)
+- Phase 3: Auto-populate cache (normalized Data Flywheel)
 """
 
 import logging
@@ -13,7 +13,10 @@ from typing import Dict, Any, List
 from app.config.settings import settings
 from app.agents.state import RecommendationAgentState
 from app.infrastructure.db.database import get_db_manager
-from app.infrastructure.db.repositories.college_repository import CollegeRepository
+from app.infrastructure.db.repositories.college_repository import (
+    CollegeRepository,
+    CollegeMajorStatsRepository,
+)
 from app.infrastructure.services.college_search_service import CollegeSearchService
 
 logger = logging.getLogger(__name__)
@@ -45,11 +48,12 @@ async def researcher_node(state: RecommendationAgentState) -> Dict[str, Any]:
         else:
             logger.info(f"Researcher: Starting hybrid search for {major} ({student_type})")
         
-        # Get database session and create service
+        # Get database session and create service with both repositories
         db = get_db_manager()
         async with db.session_factory() as session:
-            repository = CollegeRepository(session)
-            search_service = CollegeSearchService(repository)
+            college_repo = CollegeRepository(session)
+            stats_repo = CollegeMajorStatsRepository(session)
+            search_service = CollegeSearchService(college_repo, stats_repo)
             
             # Execute hybrid search (cache-first, then web) or force refresh
             universities = await search_service.hybrid_search(

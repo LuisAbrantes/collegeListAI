@@ -1,13 +1,19 @@
 """
 College Search Service for College List AI
 
-Implements Smart Sourcing RAG Pipeline:
-Phase 1: Local cache query
-Phase 2: Gemini/Ollama discovery (if needed)
-Phase 3: Auto-populate cache
+Implements Hybrid LLM Pipeline for 429 resilience:
+Phase 1: Local cache query (via JOINed tables)
+Phase 2: Gemini raw web search → Ollama JSON structuring
+Phase 3: Auto-populate cache (normalized relational upsert)
 Phase 4: Return combined list for scoring
+
+Architecture:
+- Gemini (with Search Grounding): Fetches raw text from web sources
+- Ollama (Gemma 3:27b local): Structures raw text into JSON schema
+- Resilience: 429 retry with 40s backoff, then cache fallback
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta
@@ -19,8 +25,17 @@ from google.genai import types
 from pydantic import BaseModel, Field
 
 from app.config.settings import settings
-from app.infrastructure.db.models.college import College, CollegeCreate
-from app.infrastructure.db.repositories.college_repository import CollegeRepository
+from app.infrastructure.db.models.college import (
+    College,
+    CollegeCreate,
+    CollegeMajorStats,
+    CollegeMajorStatsCreate,
+    CollegeWithMajorStats,
+)
+from app.infrastructure.db.repositories.college_repository import (
+    CollegeRepository,
+    CollegeMajorStatsRepository,
+)
 from app.domain.scoring import UniversityData
 
 logger = logging.getLogger(__name__)
@@ -28,47 +43,59 @@ logger = logging.getLogger(__name__)
 # Minimum fresh colleges before triggering web search
 MIN_CACHE_THRESHOLD = 10
 
+# Retry configuration for 429 errors
+RETRY_WAIT_SECONDS = 40
+MAX_RETRIES = 1
+
 
 # ============== Structured Output Schemas ==============
 
 class UniversityExtraction(BaseModel):
-    """Schema for a single university extracted from Gemini response."""
+    """Schema for a single university extracted from structured response."""
     name: str = Field(..., description="Full university name")
-    acceptance_rate: float = Field(..., ge=0.0, le=1.0, description="Acceptance rate as decimal (e.g., 0.15 for 15%)")
-    median_gpa: float = Field(..., ge=0.0, le=4.0, description="Median GPA of ADMITTED students")
-    sat_25th: int = Field(..., ge=400, le=1600, description="25th percentile SAT score of admitted students")
-    sat_75th: int = Field(..., ge=400, le=1600, description="75th percentile SAT score of admitted students")
-    major_strength_score: int = Field(..., ge=1, le=10, description="Program strength rating 1-10 for student's major")
-    need_blind_international: bool = Field(..., description="Whether the school is need-blind for international students")
+    campus_setting: Optional[str] = Field(None, description="URBAN, SUBURBAN, or RURAL")
+    acceptance_rate: float = Field(..., ge=0.0, le=1.0, description="Acceptance rate as decimal")
+    median_gpa: float = Field(..., ge=0.0, le=4.0, description="Median GPA of admitted students")
+    sat_25th: int = Field(..., ge=400, le=1600, description="25th percentile SAT score")
+    sat_75th: int = Field(..., ge=400, le=1600, description="75th percentile SAT score")
+    major_strength_score: int = Field(..., ge=1, le=10, description="Program strength 1-10")
+    need_blind_international: bool = Field(..., description="Need-blind for internationals")
+    meets_full_need: Optional[bool] = Field(False, description="Meets 100% demonstrated need")
 
 
-class GeminiUniversityResponse(BaseModel):
-    """Schema for the complete Gemini structured response."""
-    universities: List[UniversityExtraction] = Field(..., description="List of universities with admission data")
+class StructuredUniversityResponse(BaseModel):
+    """Schema for structured response from Ollama."""
+    universities: List[UniversityExtraction] = Field(..., description="List of universities")
 
 
 class CollegeSearchService:
     """
     Hybrid search service implementing the Data Flywheel.
     
-    Flow:
-    1. Check local cache for fresh data
-    2. If cache < threshold, discover from web via Gemini
-    3. Auto-populate cache with new discoveries
-    4. Return combined list for scoring
+    Uses HYBRID LLM ARCHITECTURE:
+    1. Gemini (with Search Grounding): Raw web search, returns unstructured text
+    2. Ollama (local Gemma 3:27b): Structures text into normalized JSON
+    
+    This avoids 429 errors from Gemini structured output while leveraging
+    local compute for reliable JSON generation.
     """
     
-    def __init__(self, repository: CollegeRepository):
-        self.repository = repository
-        self._init_llm_client()
+    def __init__(
+        self, 
+        college_repository: CollegeRepository,
+        major_stats_repository: CollegeMajorStatsRepository
+    ):
+        self.college_repo = college_repository
+        self.stats_repo = major_stats_repository
+        self._init_gemini_client()
     
-    def _init_llm_client(self):
-        """Initialize LLM client based on provider setting."""
-        if settings.llm_provider == "gemini":
-            self.client = genai.Client(api_key=settings.google_api_key)
+    def _init_gemini_client(self):
+        """Initialize Gemini client for web search (always needed for grounding)."""
+        if settings.google_api_key:
+            self.gemini_client = genai.Client(api_key=settings.google_api_key)
         else:
-            # Ollama uses HTTP requests, no persistent client needed
-            self.client = None
+            self.gemini_client = None
+            logger.warning("No Google API key configured. Web search disabled.")
     
     async def hybrid_search(
         self,
@@ -97,12 +124,12 @@ class CollegeSearchService:
         if force_refresh:
             logger.info(f"FORCE REFRESH MODE: Bypassing cache for '{major}', fetching real data from web...")
             try:
-                web_results = await self._discover_from_web(major, profile, student_type)
+                web_results = await self._discover_with_hybrid_pipeline(major, profile, student_type)
                 
                 # Phase 3: Auto-populate cache with fresh data
                 logger.info(f"Phase 3: Auto-populating cache with {len(web_results)} fresh discoveries...")
                 for uni_data in web_results:
-                    await self._save_to_cache(uni_data)
+                    await self._save_to_cache_relational(uni_data, major)
                     universities.append(uni_data)
                 
                 logger.info(f"FORCE REFRESH COMPLETE: {len(universities)} universities fetched and cached for '{major}'")
@@ -110,42 +137,41 @@ class CollegeSearchService:
                 
             except Exception as e:
                 logger.error(f"Force refresh failed: {e}")
-                # Fall back to normal cache flow
                 logger.info("Falling back to cache after force refresh failure...")
         
         # Phase 1: Check local cache with Smart Correction for THIS MAJOR
         logger.info(f"Phase 1: Checking local cache for major '{major}' with Smart Correction...")
-        fresh_count = await self.repository.count_fresh_smart(
-            current_provider=settings.llm_provider,
-            target_major=major
+        fresh_count = await self.stats_repo.count_fresh_smart(
+            current_provider="hybrid",  # New hybrid mode
+            major_name=major
         )
-        cached_colleges = await self.repository.get_fresh_colleges_smart(
-            current_provider=settings.llm_provider,
-            target_major=major,
+        cached_colleges = await self.stats_repo.get_fresh_smart(
+            current_provider="hybrid",
+            major_name=major,
             limit=limit
         )
         
-        logger.info(f"Found {fresh_count} fresh colleges for '{major}' in cache (provider: {settings.llm_provider})")
+        logger.info(f"Found {fresh_count} fresh colleges for '{major}' in cache")
         
-        # Convert cached colleges to UniversityData
-        for college in cached_colleges:
-            universities.append(self._college_to_university_data(college, major))
+        # Convert cached colleges (already JOINed) to UniversityData
+        for college_with_stats in cached_colleges:
+            universities.append(self._joined_to_university_data(college_with_stats))
         
         # Phase 2: Discovery - only if cache is insufficient
         if fresh_count < MIN_CACHE_THRESHOLD:
-            logger.info(f"Phase 2: Cache below threshold ({fresh_count} < {MIN_CACHE_THRESHOLD}), triggering discovery...")
+            logger.info(f"Phase 2: Cache below threshold ({fresh_count} < {MIN_CACHE_THRESHOLD}), triggering hybrid discovery...")
             
             try:
-                web_results = await self._discover_from_web(major, profile, student_type)
+                web_results = await self._discover_with_hybrid_pipeline(major, profile, student_type)
                 
-                # Phase 3: Auto-populate cache
+                # Phase 3: Auto-populate cache with relational upsert
                 logger.info(f"Phase 3: Auto-populating cache with {len(web_results)} discoveries...")
                 for uni_data in web_results:
-                    await self._save_to_cache(uni_data)
+                    await self._save_to_cache_relational(uni_data, major)
                     universities.append(uni_data)
                 
             except Exception as e:
-                logger.warning(f"Web discovery failed: {e}. Using cache only.")
+                logger.warning(f"Hybrid discovery failed: {e}. Using cache only.")
         else:
             logger.info("Cache sufficient, skipping web discovery")
         
@@ -160,44 +186,183 @@ class CollegeSearchService:
         logger.info(f"Phase 4: Returning {len(unique)} universities for scoring")
         return unique[:limit]
     
-    async def _discover_from_web(
+    async def _discover_with_hybrid_pipeline(
         self,
         major: str,
         profile: Dict[str, Any],
         student_type: str
     ) -> List[UniversityData]:
         """
-        Route to appropriate LLM provider based on settings.
+        HYBRID LLM PIPELINE:
+        1. Gemini Search Grounding → Raw text (with 429 retry)
+        2. Ollama local → Structured JSON
         
-        If Gemini fails with 429, logs a warning suggesting switch to Ollama.
+        This architecture avoids rate limiting issues with Gemini structured output.
         """
-        if settings.llm_provider == "ollama":
-            logger.info("Using Ollama for local development discovery")
-            return await self._discover_via_ollama(major, profile, student_type)
+        # Step 1: Get raw text from Gemini with search grounding
+        raw_text = await self._gemini_raw_search_with_retry(major, profile, student_type)
         
-        # Gemini path with 429 fallback warning
-        try:
-            return await self._discover_via_gemini(major, profile, student_type)
-        except Exception as e:
-            error_str = str(e)
-            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                logger.warning(
-                    f"Gemini 429 rate limit hit: {e}. "
-                    "Consider switching to LLM_PROVIDER=ollama for local development."
-                )
-            raise
+        if not raw_text:
+            logger.warning("Gemini returned empty response, falling back to Ollama-only mode")
+            return await self._ollama_standalone_discovery(major, profile, student_type)
+        
+        # Step 2: Structure the raw text via Ollama
+        logger.info("Sending Gemini raw text to Ollama for JSON structuring...")
+        return await self._ollama_structure_text(raw_text, major)
     
-    async def _discover_via_ollama(
+    async def _gemini_raw_search_with_retry(
+        self,
+        major: str,
+        profile: Dict[str, Any],
+        student_type: str
+    ) -> Optional[str]:
+        """
+        Gemini Search Grounding for RAW TEXT (no JSON).
+        
+        Includes 429 resilience: wait 40s and retry once.
+        """
+        if not self.gemini_client:
+            logger.warning("Gemini client not initialized, skipping web search")
+            return None
+        
+        gpa = profile.get("gpa", 3.5)
+        nationality = profile.get("nationality", "international")
+        is_domestic = student_type == "domestic"
+        
+        # Prompt for RAW TEXT output (NOT JSON)
+        prompt = f"""Research the LATEST college admission statistics for {major} programs.
+
+Student Profile:
+- GPA: {gpa}/4.0
+- Type: {"Domestic US" if is_domestic else f"International from {nationality}"}
+
+Find 15 US universities with strong {major} programs. Include:
+- 3-4 highly selective (acceptance rate < 20%)
+- 5-6 moderately selective (20-50% acceptance rate)
+- 5-6 accessible options (> 50% acceptance rate)
+
+For EACH university, provide the following information in a clear format:
+1. Full official university name
+2. Campus setting (Urban, Suburban, or Rural)
+3. Overall acceptance rate (as a percentage)
+4. Median GPA of admitted students
+5. SAT score range (25th and 75th percentile)
+6. Program strength rating for {major} (1-10 scale)
+7. Need-blind policy for international students (Yes/No)
+8. Whether they meet 100% of demonstrated financial need (Yes/No)
+
+Use the most recent 2024/2025 admission data available. Present the information clearly."""
+
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                logger.info(f"Gemini raw search attempt {attempt + 1}/{MAX_RETRIES + 1}...")
+                
+                response = self.gemini_client.models.generate_content(
+                    model=settings.gemini_model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.3,
+                        max_output_tokens=4000,
+                        # NO response_mime_type or response_schema - raw text only
+                        tools=[types.Tool(google_search=types.GoogleSearch())]
+                    )
+                )
+                
+                raw_text = response.text or ""
+                logger.info(f"Gemini returned {len(raw_text)} characters of raw text")
+                return raw_text
+                
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                    if attempt < MAX_RETRIES:
+                        logger.warning(f"Gemini 429 rate limit hit. Waiting {RETRY_WAIT_SECONDS}s before retry...")
+                        await asyncio.sleep(RETRY_WAIT_SECONDS)
+                        continue
+                    else:
+                        logger.error(f"Gemini 429 after {MAX_RETRIES + 1} attempts. Using cache fallback.")
+                        return None
+                else:
+                    logger.error(f"Gemini error: {e}")
+                    raise
+        
+        return None
+    
+    async def _ollama_structure_text(
+        self,
+        raw_text: str,
+        major: str
+    ) -> List[UniversityData]:
+        """
+        Use local Ollama to structure raw text into JSON.
+        
+        Gemma 3:27b is excellent at following JSON schemas.
+        """
+        structuring_prompt = f"""You are a data extraction assistant. Extract university information from the following text and format it as valid JSON.
+
+RAW TEXT:
+{raw_text}
+
+IMPORTANT: Extract ALL universities mentioned and format them according to this EXACT JSON schema:
+{{
+  "universities": [
+    {{
+      "name": "Full University Name",
+      "campus_setting": "URBAN" | "SUBURBAN" | "RURAL",
+      "acceptance_rate": 0.15,
+      "median_gpa": 3.9,
+      "sat_25th": 1400,
+      "sat_75th": 1550,
+      "major_strength_score": 8,
+      "need_blind_international": true,
+      "meets_full_need": true
+    }}
+  ]
+}}
+
+RULES:
+1. acceptance_rate must be a decimal between 0 and 1 (e.g., 15% → 0.15)
+2. median_gpa must be between 0.0 and 4.0
+3. SAT scores must be between 400 and 1600
+4. major_strength_score must be an integer from 1 to 10
+5. If data is missing, use reasonable estimates based on the university's selectivity
+6. campus_setting must be exactly "URBAN", "SUBURBAN", or "RURAL"
+
+Return ONLY the valid JSON object, nothing else."""
+
+        try:
+            logger.info("Ollama is structuring the Gemini response...")
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                response = await client.post(
+                    f"{settings.ollama_base_url}/api/generate",
+                    json={
+                        "model": settings.ollama_model,
+                        "prompt": structuring_prompt,
+                        "format": "json",
+                        "stream": False,
+                    },
+                )
+                response.raise_for_status()
+                result = response.json()
+                json_text = result.get("response", "")
+                
+                return self._parse_structured_response(json_text, major, data_source="hybrid")
+                
+        except httpx.HTTPError as e:
+            logger.error(f"Ollama structuring failed: {e}")
+            # Try to parse anything useful from the raw text
+            return self._fallback_parse_raw_text(raw_text, major)
+    
+    async def _ollama_standalone_discovery(
         self,
         major: str,
         profile: Dict[str, Any],
         student_type: str
     ) -> List[UniversityData]:
         """
-        Use local Ollama API for university discovery.
+        Fallback: Use Ollama alone for simulated discovery.
         
-        Since Ollama is local, simulates latest 2025 admission data
-        for testing the Auto-Populate Cache flow.
+        Used when Gemini is completely unavailable.
         """
         gpa = profile.get("gpa", 3.5)
         nationality = profile.get("nationality", "international")
@@ -205,36 +370,36 @@ class CollegeSearchService:
         
         prompt = f"""You are simulating an expert college admissions database.
 
-IMPORTANT: Since this is a LOCAL DEVELOPMENT environment, simulate realistic 
-2025 admission data for testing purposes. Generate plausible statistics.
+Generate realistic 2025 admission data for 15 US universities with strong {major} programs.
 
-Find 15 US universities for a student with these characteristics:
-- Intended Major: {major}
-- Current GPA: {gpa}/4.0
-- Student Type: {"Domestic US" if is_domestic else f"International from {nationality}"}
+Student Profile:
+- GPA: {gpa}/4.0  
+- Type: {"Domestic US" if is_domestic else f"International from {nationality}"}
 
-Include a strategically diverse mix:
-- 3 highly selective (acceptance rate < 20%)
-- 5 moderately selective (acceptance rate 20-50%)
-- 7 less selective (acceptance rate > 50%)
+Include a diverse mix:
+- 3-4 highly selective (acceptance rate < 20%)
+- 5-6 moderately selective (20-50%)
+- 5-6 accessible options (> 50%)
 
 Return ONLY valid JSON matching this exact schema:
 {{
   "universities": [
     {{
       "name": "Full University Name",
+      "campus_setting": "URBAN",
       "acceptance_rate": 0.15,
       "median_gpa": 3.9,
       "sat_25th": 1400,
       "sat_75th": 1550,
       "major_strength_score": 8,
-      "need_blind_international": true
+      "need_blind_international": true,
+      "meets_full_need": true
     }}
   ]
 }}"""
 
         try:
-            logger.info("Ollama is generating the structured response...")
+            logger.info("Ollama standalone mode: generating simulated data...")
             async with httpx.AsyncClient(timeout=300.0) as client:
                 response = await client.post(
                     f"{settings.ollama_base_url}/api/generate",
@@ -247,131 +412,30 @@ Return ONLY valid JSON matching this exact schema:
                 )
                 response.raise_for_status()
                 result = response.json()
-                return self._parse_structured_response(result.get("response", ""), major)
-        except httpx.HTTPError as e:
-            logger.error(f"Ollama API error: {e}")
-            raise RuntimeError(f"Ollama discovery failed: {e}")
-    
-    async def _discover_via_gemini(
-        self,
-        major: str,
-        profile: Dict[str, Any],
-        student_type: str
-    ) -> List[UniversityData]:
-        """
-        Use Gemini Search Grounding with Structured Output to discover universities.
-        
-        Returns validated UniversityData objects parsed from JSON response.
-        """
-        gpa = profile.get("gpa", 3.5)
-        nationality = profile.get("nationality", "international")
-        is_domestic = student_type == "domestic"
-        
-        # Build discovery prompt with LATEST DATA requirements
-        prompt = f"""You are an expert college admissions counselor with access to the LATEST admission statistics.
-
-CRITICAL REQUIREMENTS:
-1. Use data from the LATEST admission cycle (Class of 2028/2029, admitted Fall 2024/2025)
-2. Report the MEDIAN or AVERAGE statistics of ADMITTED students, NOT minimum requirements
-3. SAT scores must be the 25th and 75th percentile of ENROLLED students
-4. GPA must be the median GPA of admitted students on a 4.0 scale
-
-Find 15 US universities for a student with these characteristics:
-- Intended Major: {major}
-- Current GPA: {gpa}/4.0
-- Student Type: {"Domestic US" if is_domestic else f"International student from {nationality}"}
-
-Include a strategically diverse mix:
-- 3 highly selective universities (acceptance rate < 20%)
-- 5 moderately selective universities (acceptance rate 20-50%)
-- 7 less selective universities (acceptance rate > 50%)
-
-For EACH university, provide:
-- Full official university name
-- Acceptance rate as a decimal (e.g., 0.15 for 15%)
-- Median GPA of ADMITTED students (not minimum required)
-- 25th percentile SAT score of admitted students
-- 75th percentile SAT score of admitted students
-- Program strength score (1-10) for {major} specifically
-- Whether the school is need-blind for international student admissions
-
-IMPORTANT: Focus on universities with strong {major} programs. Use real 2024/2025 admission data."""
-
-        try:
-            response = self.client.models.generate_content(
-                model=settings.gemini_model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.2,
-                    max_output_tokens=4000,
-                    response_mime_type="application/json",
-                    response_schema=GeminiUniversityResponse,
-                    tools=[types.Tool(google_search=types.GoogleSearch())]
+                return self._parse_structured_response(
+                    result.get("response", ""), 
+                    major, 
+                    data_source="ollama_simulated"
                 )
-            )
-            
-            # Parse structured JSON response
-            return self._parse_structured_response(response.text or "", major)
-            
-        except Exception as e:
-            logger.error(f"Gemini structured output failed: {e}")
-            # Fallback: try without structured output
-            return await self._discover_from_web_fallback(major, profile, student_type)
-    
-    async def _discover_from_web_fallback(
-        self,
-        major: str,
-        profile: Dict[str, Any],
-        student_type: str
-    ) -> List[UniversityData]:
-        """Fallback discovery without structured output (basic JSON parsing)."""
-        gpa = profile.get("gpa", 3.5)
-        nationality = profile.get("nationality", "international")
-        is_domestic = student_type == "domestic"
-        
-        prompt = f"""Find 15 US universities for a {major} student with {gpa} GPA.
-Student type: {"Domestic" if is_domestic else f"International from {nationality}"}
-
-Return a JSON object with a "universities" array containing objects with these fields:
-- name (string): Full university name
-- acceptance_rate (number): Decimal 0-1, e.g. 0.15 for 15%
-- median_gpa (number): Median GPA of admitted students
-- sat_25th (integer): 25th percentile SAT
-- sat_75th (integer): 75th percentile SAT
-- major_strength_score (integer): 1-10 program strength for {major}
-- need_blind_international (boolean): Need-blind for international students
-
-Use the latest 2024/2025 admission data. Focus on {major} programs."""
-
-        response = self.client.models.generate_content(
-            model=settings.gemini_model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.3,
-                max_output_tokens=3000,
-                tools=[types.Tool(google_search=types.GoogleSearch())]
-            )
-        )
-        
-        return self._parse_structured_response(response.text or "", major)
+        except httpx.HTTPError as e:
+            logger.error(f"Ollama standalone failed: {e}")
+            raise RuntimeError(f"Ollama discovery failed: {e}")
     
     def _parse_structured_response(
         self,
         text: str,
-        major: str
+        major: str,
+        data_source: str = "hybrid"
     ) -> List[UniversityData]:
         """
-        Parse Gemini JSON response into structured UniversityData.
+        Parse JSON response into structured UniversityData.
         
-        Handles both structured output and fallback JSON formats.
+        Handles normalized schema with both institutional and major-specific data.
         """
         universities = []
         
         try:
-            # Parse JSON response
             data = json.loads(text)
-            
-            # Handle both direct list and nested object formats
             uni_list = data.get("universities", []) if isinstance(data, dict) else data
             
             for uni in uni_list:
@@ -384,62 +448,127 @@ Use the latest 2024/2025 admission data. Focus on {major} programs."""
                         sat_75th=int(uni.get("sat_75th", 1400)),
                         major_ranking=uni.get("major_strength_score"),
                         need_blind_international=bool(uni.get("need_blind_international", False)),
-                        data_source="gemini",
+                        data_source=data_source,
                         has_major=True,
                         student_major=major,
+                        # New fields for normalized schema
+                        campus_setting=uni.get("campus_setting"),
+                        meets_full_need=bool(uni.get("meets_full_need", False)),
                     ))
                 except (KeyError, ValueError, TypeError) as e:
                     logger.warning(f"Skipping malformed university entry: {e}")
                     continue
             
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse LLM JSON response: {e}")
+            logger.error(f"Failed to parse JSON response: {e}")
             logger.debug(f"Raw response: {text[:500]}...")
         
-        logger.info(f"Parsed {len(universities)} universities from LLM response")
+        logger.info(f"Parsed {len(universities)} universities from {data_source} response")
         return universities
     
-    async def _save_to_cache(self, uni_data: UniversityData) -> None:
+    def _fallback_parse_raw_text(
+        self,
+        raw_text: str,
+        major: str
+    ) -> List[UniversityData]:
         """
-        Save a university to the cache (auto-population).
+        Emergency fallback: Extract university names from raw text.
         
-        Uses the student_major from UniversityData as target_major key.
-        Each (name, major) combination is stored separately.
+        Used if both Gemini structuring and Ollama fail.
         """
-        # Determine data source based on current provider
-        data_source = "ollama_simulated" if settings.llm_provider == "ollama" else "gemini"
+        # Known top universities as fallback
+        known_universities = [
+            "Massachusetts Institute of Technology",
+            "Stanford University", 
+            "Carnegie Mellon University",
+            "University of California, Berkeley",
+            "Georgia Institute of Technology",
+            "University of Illinois Urbana-Champaign",
+            "University of Michigan",
+            "Cornell University",
+            "University of Texas at Austin",
+            "Purdue University",
+        ]
         
-        # Use the student's major as target_major for segmented cache
-        target_major = uni_data.student_major or "general"
+        universities = []
+        for name in known_universities:
+            if name.lower() in raw_text.lower():
+                universities.append(UniversityData(
+                    name=name,
+                    acceptance_rate=0.2,  # Default estimate
+                    median_gpa=3.7,
+                    sat_25th=1350,
+                    sat_75th=1520,
+                    major_ranking=8,
+                    need_blind_international=False,
+                    data_source="fallback",
+                    has_major=True,
+                    student_major=major,
+                ))
         
-        college_create = CollegeCreate(
+        logger.warning(f"Fallback parser extracted {len(universities)} known universities")
+        return universities
+    
+    async def _save_to_cache_relational(
+        self, 
+        uni_data: UniversityData, 
+        major: str
+    ) -> None:
+        """
+        RELATIONAL UPSERT: Save to normalized tables.
+        
+        Step 1: Upsert College (institutional data) → get college.id
+        Step 2: Upsert CollegeMajorStats (major-specific) with college_id FK
+        """
+        # Step 1: Upsert institutional data to colleges table
+        college_data = CollegeCreate(
             name=uni_data.name,
-            target_major=target_major,  # Major-segmented cache key
+            campus_setting=getattr(uni_data, 'campus_setting', None),
+            need_blind_international=uni_data.need_blind_international or False,
+            meets_full_need=getattr(uni_data, 'meets_full_need', False),
+        )
+        college, created = await self.college_repo.get_or_create(college_data)
+        
+        if created:
+            logger.debug(f"Created new college: {college.name}")
+        else:
+            # Update institutional data if changed
+            if hasattr(uni_data, 'campus_setting') and uni_data.campus_setting:
+                college.campus_setting = uni_data.campus_setting
+            if uni_data.need_blind_international is not None:
+                college.need_blind_international = uni_data.need_blind_international
+            if hasattr(uni_data, 'meets_full_need'):
+                college.meets_full_need = getattr(uni_data, 'meets_full_need', False)
+        
+        # Step 2: Upsert major-specific stats with FK reference
+        stats_data = CollegeMajorStatsCreate(
+            college_id=college.id,
+            major_name=major,
             acceptance_rate=uni_data.acceptance_rate,
             median_gpa=uni_data.median_gpa,
             sat_25th=uni_data.sat_25th,
             sat_75th=uni_data.sat_75th,
-            need_blind_international=uni_data.need_blind_international or False,
-            major_strength=uni_data.major_ranking,  # Store program strength
-            data_source=data_source,
+            major_strength=uni_data.major_ranking,
+            data_source=uni_data.data_source or "hybrid",
         )
-        await self.repository.upsert(college_create)
+        await self.stats_repo.upsert(college.id, stats_data)
+        
+        logger.debug(f"Cached {college.name} stats for {major}")
     
-    def _college_to_university_data(
+    def _joined_to_university_data(
         self,
-        college: College,
-        major: str
+        college_with_stats: CollegeWithMajorStats
     ) -> UniversityData:
-        """Convert a cached College to UniversityData for scoring."""
+        """Convert JOINed result to UniversityData for scoring."""
         return UniversityData(
-            name=college.name,
-            acceptance_rate=college.acceptance_rate,
-            median_gpa=college.median_gpa,
-            sat_25th=college.sat_25th,
-            sat_75th=college.sat_75th,
-            need_blind_international=college.need_blind_international,
-            major_ranking=college.major_strength,  # Read from cache
-            data_source=college.data_source or "cache",
+            name=college_with_stats.name,
+            acceptance_rate=college_with_stats.acceptance_rate,
+            median_gpa=college_with_stats.median_gpa,
+            sat_25th=college_with_stats.sat_25th,
+            sat_75th=college_with_stats.sat_75th,
+            need_blind_international=college_with_stats.need_blind_international,
+            major_ranking=college_with_stats.major_strength,
+            data_source=college_with_stats.data_source or "cache",
             has_major=True,
-            student_major=major,
+            student_major=college_with_stats.major_name,
         )

@@ -1,17 +1,27 @@
 """
-Unit tests for major-segmented cache architecture.
+Unit tests for normalized college schema.
 
-Tests the new composite key (name, target_major) logic in the repository
-and ensures different majors don't overwrite each other's data.
+Tests the split architecture with:
+- CollegeRepository: Institutional data
+- CollegeMajorStatsRepository: Major-specific RAG data
+- JOIN queries between tables
 """
 
 import pytest
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
-from app.infrastructure.db.models.college import College, CollegeCreate
+from app.infrastructure.db.models.college import (
+    College, 
+    CollegeCreate,
+    CollegeMajorStats,
+    CollegeMajorStatsCreate,
+    CollegeWithMajorStats,
+)
 from app.infrastructure.db.repositories.college_repository import (
     CollegeRepository,
+    CollegeMajorStatsRepository,
     STALENESS_DAYS,
 )
 
@@ -30,189 +40,186 @@ def mock_session():
 
 
 @pytest.fixture
-def repository(mock_session):
+def college_repo(mock_session):
     """College repository with mocked session."""
     return CollegeRepository(mock_session)
 
 
 @pytest.fixture
-def mit_cs_data():
-    """MIT with Computer Science major data."""
+def stats_repo(mock_session):
+    """Major stats repository with mocked session."""
+    return CollegeMajorStatsRepository(mock_session)
+
+
+@pytest.fixture
+def sample_college_id():
+    """Sample college UUID."""
+    return uuid4()
+
+
+@pytest.fixture
+def mit_college_data():
+    """MIT institutional data."""
     return CollegeCreate(
         name="Massachusetts Institute of Technology",
-        target_major="Computer Science",
+        campus_setting="URBAN",
+        need_blind_international=True,
+        meets_full_need=True,
+    )
+
+
+@pytest.fixture
+def mit_cs_stats(sample_college_id):
+    """MIT Computer Science major stats."""
+    return CollegeMajorStatsCreate(
+        college_id=sample_college_id,
+        major_name="Computer Science",
         acceptance_rate=0.04,
         median_gpa=3.97,
         sat_25th=1520,
         sat_75th=1580,
         major_strength=10,
-        need_blind_international=True,
         data_source="gemini",
     )
 
 
 @pytest.fixture
-def mit_physics_data():
-    """MIT with Physics major data."""
-    return CollegeCreate(
-        name="Massachusetts Institute of Technology",
-        target_major="Physics",
+def mit_physics_stats(sample_college_id):
+    """MIT Physics major stats."""
+    return CollegeMajorStatsCreate(
+        college_id=sample_college_id,
+        major_name="Physics",
         acceptance_rate=0.04,
         median_gpa=3.95,
         sat_25th=1510,
         sat_75th=1570,
-        major_strength=10,  # Also top-tier for Physics
-        need_blind_international=True,
+        major_strength=10,
         data_source="gemini",
     )
 
 
-@pytest.fixture
-def mit_art_history_data():
-    """MIT with Art History major data (less strong)."""
-    return CollegeCreate(
-        name="Massachusetts Institute of Technology",
-        target_major="Art History",
-        acceptance_rate=0.04,
-        median_gpa=3.90,
-        sat_25th=1480,
-        sat_75th=1550,
-        major_strength=6,  # Not MIT's flagship
-        need_blind_international=True,
-        data_source="gemini",
-    )
+# ============== College Repository Tests ==============
 
-
-# ============== Composite Key Tests ==============
-
-class TestMajorSegmentedCache:
-    """Tests for major-segmented cache behavior."""
+class TestCollegeRepository:
+    """Tests for CollegeRepository (institutional data)."""
     
     @pytest.mark.asyncio
-    async def test_get_by_name_requires_target_major(self, repository, mock_session):
-        """get_by_name should query by both name AND target_major."""
-        # Mock empty result
+    async def test_get_by_name(self, college_repo, mock_session):
+        """get_by_name should query by unique name."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
         mock_session.execute.return_value = mock_result
         
-        # Call with both parameters
-        result = await repository.get_by_name(
-            "MIT", 
-            target_major="Computer Science"
-        )
+        result = await college_repo.get_by_name("MIT")
         
-        # Verify the query was built with both conditions
         mock_session.execute.assert_called_once()
-        call_args = mock_session.execute.call_args
-        # The statement should contain both name and target_major conditions
-        assert call_args is not None
+        assert result is None
     
     @pytest.mark.asyncio
-    async def test_upsert_uses_composite_key(self, repository, mock_session, mit_cs_data):
-        """Upsert should use (name, target_major) as the lookup key."""
-        # Mock get_by_name to return None (new entry)
+    async def test_get_or_create_creates_new(self, college_repo, mock_session, mit_college_data):
+        """get_or_create should create new college if not exists."""
+        # Mock get_by_name returns None (not found)
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
         mock_session.execute.return_value = mock_result
         
-        # Mock create
-        with patch.object(repository, 'create', new_callable=AsyncMock) as mock_create:
-            mock_create.return_value = College(**mit_cs_data.model_dump())
+        with patch.object(college_repo, 'create', new_callable=AsyncMock) as mock_create:
+            new_college = College(**mit_college_data.model_dump(), id=uuid4())
+            mock_create.return_value = new_college
             
-            await repository.upsert(mit_cs_data)
+            college, created = await college_repo.get_or_create(mit_college_data)
             
-            # Should have called create since no existing record
-            mock_create.assert_called_once_with(mit_cs_data)
+            assert created is True
+            mock_create.assert_called_once_with(mit_college_data)
+
+
+# ============== Major Stats Repository Tests ==============
+
+class TestCollegeMajorStatsRepository:
+    """Tests for CollegeMajorStatsRepository (major-specific data)."""
     
     @pytest.mark.asyncio
-    async def test_different_majors_create_separate_records(
-        self, 
-        repository, 
-        mock_session, 
-        mit_cs_data, 
-        mit_physics_data
-    ):
-        """Same college with different majors should create separate cache entries."""
-        # Mock get_by_name to always return None (new entries)
+    async def test_get_by_college_and_major(self, stats_repo, mock_session, sample_college_id):
+        """get_by_college_and_major should query by composite key."""
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
         mock_session.execute.return_value = mock_result
         
-        with patch.object(repository, 'create', new_callable=AsyncMock) as mock_create:
-            # Create returns the college
-            mock_create.side_effect = [
-                College(**mit_cs_data.model_dump()),
-                College(**mit_physics_data.model_dump()),
-            ]
-            
-            # Upsert CS data
-            await repository.upsert(mit_cs_data)
-            
-            # Upsert Physics data - should NOT overwrite CS
-            await repository.upsert(mit_physics_data)
-            
-            # Both should have called create (separate records)
-            assert mock_create.call_count == 2
-
-
-class TestMajorFilteredQueries:
-    """Tests for major-aware query methods."""
-    
-    @pytest.mark.asyncio
-    async def test_get_fresh_colleges_smart_filters_by_major(
-        self, 
-        repository, 
-        mock_session
-    ):
-        """get_fresh_colleges_smart should filter by target_major."""
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = []
-        mock_session.execute.return_value = mock_result
-        
-        await repository.get_fresh_colleges_smart(
-            current_provider="gemini",
-            target_major="Computer Science",
-            limit=20
+        result = await stats_repo.get_by_college_and_major(
+            sample_college_id, 
+            "Computer Science"
         )
         
-        # Verify execute was called (query built with major filter)
         mock_session.execute.assert_called_once()
+        assert result is None
     
     @pytest.mark.asyncio
-    async def test_count_fresh_smart_filters_by_major(
-        self, 
-        repository, 
-        mock_session
-    ):
-        """count_fresh_smart should count only for specific major."""
+    async def test_upsert_creates_new(self, stats_repo, mock_session, sample_college_id, mit_cs_stats):
+        """upsert should create new stats if not exists."""
+        # Mock get_by_college_and_major returns None
         mock_result = MagicMock()
-        mock_result.scalar.return_value = 5
+        mock_result.scalar_one_or_none.return_value = None
         mock_session.execute.return_value = mock_result
         
-        count = await repository.count_fresh_smart(
-            current_provider="gemini",
-            target_major="Physics"
+        with patch.object(stats_repo, 'create', new_callable=AsyncMock) as mock_create:
+            new_stats = CollegeMajorStats(**mit_cs_stats.model_dump(), id=uuid4())
+            mock_create.return_value = new_stats
+            
+            result = await stats_repo.upsert(sample_college_id, mit_cs_stats)
+            
+            mock_create.assert_called_once()
+
+
+# ============== Normalized Schema Tests ==============
+
+class TestNormalizedSchema:
+    """Tests for normalized schema behavior."""
+    
+    def test_college_create_no_major_fields(self, mit_college_data):
+        """CollegeCreate should NOT have major-specific fields."""
+        assert not hasattr(mit_college_data, 'acceptance_rate')
+        assert not hasattr(mit_college_data, 'median_gpa')
+        assert not hasattr(mit_college_data, 'target_major')
+    
+    def test_stats_create_has_college_id(self, mit_cs_stats):
+        """CollegeMajorStatsCreate should have college_id FK."""
+        assert hasattr(mit_cs_stats, 'college_id')
+        assert mit_cs_stats.college_id is not None
+    
+    def test_different_majors_same_college(self, mit_cs_stats, mit_physics_stats):
+        """Same college_id can have different major stats."""
+        assert mit_cs_stats.college_id == mit_physics_stats.college_id
+        assert mit_cs_stats.major_name != mit_physics_stats.major_name
+        # Both can have different stats
+        assert mit_cs_stats.median_gpa != mit_physics_stats.median_gpa
+
+
+class TestCollegeWithMajorStats:
+    """Tests for JOINed response model."""
+    
+    def test_combined_view_has_all_fields(self):
+        """CollegeWithMajorStats should have both institution and stats fields."""
+        combined = CollegeWithMajorStats(
+            id=uuid4(),
+            name="MIT",
+            campus_setting="URBAN",
+            need_blind_international=True,
+            meets_full_need=True,
+            major_name="Computer Science",
+            acceptance_rate=0.04,
+            median_gpa=3.97,
+            sat_25th=1520,
+            sat_75th=1580,
+            major_strength=10,
+            data_source="gemini",
+            updated_at=datetime.utcnow(),
         )
         
-        assert count == 5
-        mock_session.execute.assert_called_once()
-
-
-class TestCacheMissBehavior:
-    """Tests for cache miss detection by major."""
-    
-    def test_college_create_includes_target_major(self, mit_cs_data):
-        """CollegeCreate should include target_major field."""
-        assert hasattr(mit_cs_data, 'target_major')
-        assert mit_cs_data.target_major == "Computer Science"
-    
-    def test_different_major_strengths_per_major(
-        self, 
-        mit_cs_data, 
-        mit_art_history_data
-    ):
-        """Same college can have different major_strength per major."""
-        assert mit_cs_data.name == mit_art_history_data.name
-        assert mit_cs_data.major_strength == 10  # Top-tier CS
-        assert mit_art_history_data.major_strength == 6  # Not flagship
+        # Institution fields
+        assert combined.name == "MIT"
+        assert combined.need_blind_international is True
+        
+        # Major-specific fields
+        assert combined.major_name == "Computer Science"
+        assert combined.acceptance_rate == 0.04
+        assert combined.major_strength == 10

@@ -1,108 +1,112 @@
 """
-College SQLModel for College List AI
+College SQLModels for College List AI
 
-Database model for college/university cache with structured stats.
-Enhanced for Smart Sourcing RAG Pipeline with staleness detection.
+Database models for normalized college data:
+- College: Fixed institutional data (one row per university)
+- CollegeMajorStats: Major-specific RAG data (one row per college+major combination)
+
+This implements proper 3NF normalization for the RAG pipeline.
 """
 
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, JSON, String, Float, Integer, UniqueConstraint
-from sqlmodel import Field, SQLModel
+from sqlalchemy import Column, String, UniqueConstraint, ForeignKey
+from sqlmodel import Field, SQLModel, Relationship
 
+if TYPE_CHECKING:
+    from typing import List
+
+
+# ============== Base Schemas ==============
 
 class CollegeBase(SQLModel):
-    """Base schema for College model with structured stats."""
+    """Base schema for College institutional data."""
     
     name: str = Field(
         ...,
         max_length=255,
-        index=True,
-        description="University name"
+        description="University name (unique identifier)"
     )
     
-    # Major-segmented cache: each (name, target_major) is unique
-    target_major: str = Field(
-        default="general",
-        max_length=100,
-        index=True,
-        description="Target major for this cache entry (e.g., 'Computer Science', 'Physics')"
-    )
-    
-    # Structured stats for scoring (no longer just JSON blob)
-    acceptance_rate: Optional[float] = Field(
-        default=None,
-        ge=0.0, le=1.0,
-        description="Acceptance rate as decimal (0.0-1.0)"
-    )
-    median_gpa: Optional[float] = Field(
-        default=None,
-        ge=0.0, le=4.0,
-        description="Median GPA of admitted students"
-    )
-    sat_25th: Optional[int] = Field(
-        default=None,
-        ge=400, le=1600,
-        description="25th percentile SAT score"
-    )
-    sat_75th: Optional[int] = Field(
-        default=None,
-        ge=400, le=1600,
-        description="75th percentile SAT score"
-    )
-    
-    # Financial aid info
-    need_blind_international: bool = Field(
-        default=False,
-        description="Whether need-blind for international students"
-    )
-    meets_full_need: bool = Field(
-        default=False,
-        description="Whether meets 100% demonstrated need"
-    )
-    
-    # Program strength
-    major_strength: Optional[int] = Field(
-        default=None,
-        ge=1, le=10,
-        description="Program strength score 1-10 for student's major"
-    )
-    
-    # Campus info
     campus_setting: Optional[str] = Field(
         default=None,
         max_length=50,
         description="URBAN, SUBURBAN, RURAL"
     )
     
-    # Data provenance
+    need_blind_international: bool = Field(
+        default=False,
+        description="Whether need-blind for international students"
+    )
+    
+    meets_full_need: bool = Field(
+        default=False,
+        description="Whether meets 100% demonstrated need"
+    )
+
+
+class CollegeMajorStatsBase(SQLModel):
+    """Base schema for major-specific statistics."""
+    
+    major_name: str = Field(
+        ...,
+        max_length=100,
+        index=True,
+        description="Major name (e.g., 'Computer Science', 'Physics')"
+    )
+    
+    acceptance_rate: Optional[float] = Field(
+        default=None,
+        ge=0.0, le=1.0,
+        description="Acceptance rate as decimal (0.0-1.0)"
+    )
+    
+    median_gpa: Optional[float] = Field(
+        default=None,
+        ge=0.0, le=4.0,
+        description="Median GPA of admitted students"
+    )
+    
+    sat_25th: Optional[int] = Field(
+        default=None,
+        ge=400, le=1600,
+        description="25th percentile SAT score"
+    )
+    
+    sat_75th: Optional[int] = Field(
+        default=None,
+        ge=400, le=1600,
+        description="75th percentile SAT score"
+    )
+    
+    major_strength: Optional[int] = Field(
+        default=None,
+        ge=1, le=10,
+        description="Program strength score 1-10 for this major"
+    )
+    
     data_source: Optional[str] = Field(
         default="gemini",
         max_length=100,
-        description="Source: gemini, manual, common_data_set"
-    )
-    
-    # Legacy JSON field for additional metadata
-    content: Optional[str] = Field(
-        default=None,
-        description="JSON serialized additional metadata"
+        description="Source: gemini, ollama_simulated, manual, common_data_set"
     )
 
+
+# ============== Database Table Models ==============
 
 class College(CollegeBase, table=True):
     """
-    College cache database table model.
+    College institutional data table.
     
-    Table name matches existing Supabase table 'colleges_cache'.
-    Enhanced with structured fields for RAG pipeline.
-    Uses composite unique constraint on (name, target_major) for major-segmented cache.
+    Contains fixed data about the university that doesn't change per major.
+    One row per university, with name as unique identifier.
     """
     
-    __tablename__ = "colleges_cache"
+    __tablename__ = "colleges"
     __table_args__ = (
-        UniqueConstraint('name', 'target_major', name='colleges_cache_name_major_unique'),
+        UniqueConstraint('name', name='colleges_name_unique'),
     )
     
     id: UUID = Field(
@@ -111,25 +115,102 @@ class College(CollegeBase, table=True):
         description="Unique college identifier"
     )
     
-    # Note: created_at is managed by Supabase, not SQLModel
-    # We only track updated_at for staleness detection
-    updated_at: Optional[datetime] = Field(
+    created_at: Optional[datetime] = Field(
         default_factory=datetime.utcnow,
-        description="Last update timestamp for staleness detection"
+        description="When this college was first added"
     )
+    
+    # Relationship to major stats
+    major_stats: List["CollegeMajorStats"] = Relationship(back_populates="college")
     
     class Config:
         from_attributes = True
 
 
+class CollegeMajorStats(CollegeMajorStatsBase, table=True):
+    """
+    Major-specific statistics table for RAG pipeline.
+    
+    Contains admission statistics and program strength for a specific major.
+    Each (college_id, major_name) combination is unique.
+    """
+    
+    __tablename__ = "college_major_stats"
+    __table_args__ = (
+        UniqueConstraint('college_id', 'major_name', name='college_major_stats_unique'),
+    )
+    
+    id: UUID = Field(
+        default_factory=uuid4,
+        primary_key=True,
+        description="Unique stats record identifier"
+    )
+    
+    college_id: UUID = Field(
+        ...,
+        foreign_key="colleges.id",
+        index=True,
+        description="Foreign key to colleges table"
+    )
+    
+    updated_at: Optional[datetime] = Field(
+        default_factory=datetime.utcnow,
+        description="Last update timestamp for staleness detection"
+    )
+    
+    # Relationship to parent college
+    college: Optional[College] = Relationship(back_populates="major_stats")
+    
+    class Config:
+        from_attributes = True
+
+
+# ============== Create/Update Schemas ==============
+
 class CollegeCreate(CollegeBase):
-    """Schema for creating a new college cache entry."""
+    """Schema for creating a new college."""
     pass
 
 
 class CollegeRead(CollegeBase):
-    """Schema for reading college with all fields."""
-    
+    """Schema for reading college with ID."""
     id: UUID
+    created_at: Optional[datetime]
+
+
+class CollegeMajorStatsCreate(CollegeMajorStatsBase):
+    """Schema for creating new major stats."""
+    college_id: UUID
+
+
+class CollegeMajorStatsRead(CollegeMajorStatsBase):
+    """Schema for reading major stats with all fields."""
+    id: UUID
+    college_id: UUID
     updated_at: Optional[datetime]
 
+
+# ============== Joined Response Model ==============
+
+class CollegeWithMajorStats(SQLModel):
+    """
+    Combined view for API responses.
+    
+    Used when querying colleges with their specific major stats joined.
+    """
+    # College fields
+    id: UUID
+    name: str
+    campus_setting: Optional[str] = None
+    need_blind_international: bool = False
+    meets_full_need: bool = False
+    
+    # Major stats fields
+    major_name: str
+    acceptance_rate: Optional[float] = None
+    median_gpa: Optional[float] = None
+    sat_25th: Optional[int] = None
+    sat_75th: Optional[int] = None
+    major_strength: Optional[int] = None
+    data_source: Optional[str] = None
+    updated_at: Optional[datetime] = None

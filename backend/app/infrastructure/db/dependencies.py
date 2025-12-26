@@ -14,6 +14,7 @@ from app.infrastructure.db.database import get_session
 from app.infrastructure.db.repositories import (
     UserProfileRepository,
     CollegeRepository,
+    CollegeMajorStatsRepository,
 )
 
 
@@ -46,6 +47,15 @@ async def get_college_repository(
     yield CollegeRepository(session)
 
 
+async def get_college_major_stats_repository(
+    session: SessionDep,
+) -> AsyncGenerator[CollegeMajorStatsRepository, None]:
+    """
+    Dependency provider for CollegeMajorStatsRepository.
+    """
+    yield CollegeMajorStatsRepository(session)
+
+
 # Type aliases for repository dependencies
 UserProfileRepoDep = Annotated[
     UserProfileRepository, 
@@ -55,3 +65,8 @@ CollegeRepoDep = Annotated[
     CollegeRepository, 
     Depends(get_college_repository)
 ]
+CollegeMajorStatsRepoDep = Annotated[
+    CollegeMajorStatsRepository,
+    Depends(get_college_major_stats_repository)
+]
+
