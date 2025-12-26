@@ -72,12 +72,12 @@ class CollegeSearchService:
     """
     Hybrid search service implementing the Data Flywheel.
     
-    Uses HYBRID LLM ARCHITECTURE:
-    1. Gemini (with Search Grounding): Raw web search, returns unstructured text
-    2. Ollama (local Gemma 3:27b): Structures text into normalized JSON
+    ARCHITECTURE (based on llm_provider setting):
+    - perplexity: Perplexity Sonar → Ollama structuring (best for search)
+    - gemini: Gemini Search Grounding → Ollama structuring  
+    - ollama: Ollama-only discovery and structuring (fully local)
     
-    This avoids 429 errors from Gemini structured output while leveraging
-    local compute for reliable JSON generation.
+    All paths use Ollama for JSON structuring to avoid rate limits.
     """
     
     def __init__(
@@ -87,15 +87,21 @@ class CollegeSearchService:
     ):
         self.college_repo = college_repository
         self.stats_repo = major_stats_repository
-        self._init_gemini_client()
+        self._init_clients()
     
-    def _init_gemini_client(self):
-        """Initialize Gemini client for web search (always needed for grounding)."""
+    def _init_clients(self):
+        """Initialize clients based on llm_provider setting."""
+        # Gemini client (used if llm_provider == gemini)
         if settings.google_api_key:
             self.gemini_client = genai.Client(api_key=settings.google_api_key)
         else:
             self.gemini_client = None
-            logger.warning("No Google API key configured. Web search disabled.")
+        
+        # Perplexity uses httpx (no persistent client needed)
+        self.perplexity_configured = bool(settings.perplexity_api_key)
+        
+        logger.info(f"LLM provider configured: {settings.llm_provider}")
+
     
     async def hybrid_search(
         self,
@@ -193,22 +199,121 @@ class CollegeSearchService:
         student_type: str
     ) -> List[UniversityData]:
         """
-        HYBRID LLM PIPELINE:
-        1. Gemini Search Grounding → Raw text (with 429 retry)
-        2. Ollama local → Structured JSON
-        
-        This architecture avoids rate limiting issues with Gemini structured output.
+        HYBRID LLM PIPELINE based on llm_provider setting:
+        - perplexity: Perplexity Sonar raw search → Ollama structuring
+        - gemini: Gemini Search Grounding → Ollama structuring
+        - ollama: Ollama-only discovery (fully local)
         """
-        # Step 1: Get raw text from Gemini with search grounding
-        raw_text = await self._gemini_raw_search_with_retry(major, profile, student_type)
+        raw_text = None
+        data_source = settings.llm_provider  # Track which provider fetched the data
         
-        if not raw_text:
-            logger.warning("Gemini returned empty response, falling back to Ollama-only mode")
+        # Route based on llm_provider
+        if settings.llm_provider == "perplexity":
+            logger.info("Using Perplexity Sonar for web search...")
+            raw_text = await self._perplexity_raw_search_with_retry(major, profile, student_type)
+            
+        elif settings.llm_provider == "gemini":
+            logger.info("Using Gemini for web search...")
+            raw_text = await self._gemini_raw_search_with_retry(major, profile, student_type)
+            
+        else:  # ollama
+            logger.info("Using Ollama-only mode (fully local)...")
             return await self._ollama_standalone_discovery(major, profile, student_type)
         
-        # Step 2: Structure the raw text via Ollama
-        logger.info("Sending Gemini raw text to Ollama for JSON structuring...")
-        return await self._ollama_structure_text(raw_text, major)
+        # If API search failed, fallback to Ollama
+        if not raw_text:
+            logger.warning(f"{settings.llm_provider} search failed, falling back to Ollama-only")
+            return await self._ollama_standalone_discovery(major, profile, student_type)
+        
+        # Structure the raw text via Ollama (pass data_source for cache labeling)
+        logger.info(f"Sending {data_source} raw text to Ollama for JSON structuring...")
+        return await self._ollama_structure_text(raw_text, major, data_source)
+    
+    async def _perplexity_raw_search_with_retry(
+        self,
+        major: str,
+        profile: Dict[str, Any],
+        student_type: str
+    ) -> Optional[str]:
+        """
+        Perplexity Sonar API for web search (RAW TEXT output).
+        
+        Uses OpenAI-compatible API format.
+        Includes retry logic for 429 rate limits.
+        """
+        gpa = profile.get("gpa", 3.5)
+        nationality = profile.get("nationality", "international")
+        is_domestic = student_type == "domestic"
+        
+        prompt = f"""Research the LATEST college admission statistics for {major} programs.
+
+Student Profile:
+- GPA: {gpa}/4.0
+- Type: {"Domestic US" if is_domestic else f"International from {nationality}"}
+
+Find 15 US universities with strong {major} programs. Include:
+- 3-4 highly selective (acceptance rate < 20%)
+- 5-6 moderately selective (20-50% acceptance rate)
+- 5-6 accessible options (> 50% acceptance rate)
+
+For EACH university, provide in a clear format:
+1. Full official university name
+2. Campus setting (Urban, Suburban, or Rural)
+3. Overall acceptance rate (as a percentage)
+4. Median GPA of admitted students
+5. SAT score range (25th and 75th percentile)
+6. Program strength rating for {major} (1-10 scale)
+7. Need-blind policy for international students (Yes/No)
+8. Whether they meet 100% of demonstrated financial need (Yes/No)
+
+Use the most recent 2024/2025 admission data available."""
+
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                logger.info(f"Perplexity search attempt {attempt + 1}/{MAX_RETRIES + 1}...")
+                
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(
+                        "https://api.perplexity.ai/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {settings.perplexity_api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": settings.perplexity_model,
+                            "messages": [
+                                {"role": "user", "content": prompt}
+                            ],
+                        },
+                    )
+                    
+                    if response.status_code == 429:
+                        if attempt < MAX_RETRIES:
+                            logger.warning(f"Perplexity 429 rate limit. Waiting {RETRY_WAIT_SECONDS}s...")
+                            await asyncio.sleep(RETRY_WAIT_SECONDS)
+                            continue
+                        else:
+                            logger.error("Perplexity 429 after all retries")
+                            return None
+                    
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    raw_text = data["choices"][0]["message"]["content"]
+                    logger.info(f"Perplexity returned {len(raw_text)} characters")
+                    return raw_text
+                    
+            except httpx.HTTPError as e:
+                logger.error(f"Perplexity API error: {e}")
+                if attempt < MAX_RETRIES:
+                    await asyncio.sleep(RETRY_WAIT_SECONDS)
+                    continue
+                return None
+            except (KeyError, IndexError) as e:
+                logger.error(f"Perplexity response parsing error: {e}")
+                return None
+        
+        return None
     
     async def _gemini_raw_search_with_retry(
         self,
@@ -291,12 +396,16 @@ Use the most recent 2024/2025 admission data available. Present the information 
     async def _ollama_structure_text(
         self,
         raw_text: str,
-        major: str
+        major: str,
+        data_source: str = "hybrid"
     ) -> List[UniversityData]:
         """
         Use local Ollama to structure raw text into JSON.
         
-        Gemma 3:27b is excellent at following JSON schemas.
+        Args:
+            raw_text: Unstructured text from search provider
+            major: Student's intended major
+            data_source: Which provider fetched the data (perplexity/gemini)
         """
         structuring_prompt = f"""You are a data extraction assistant. Extract university information from the following text and format it as valid JSON.
 
@@ -331,7 +440,7 @@ RULES:
 Return ONLY the valid JSON object, nothing else."""
 
         try:
-            logger.info("Ollama is structuring the Gemini response...")
+            logger.info(f"Ollama is structuring the {data_source} response...")
             async with httpx.AsyncClient(timeout=300.0) as client:
                 response = await client.post(
                     f"{settings.ollama_base_url}/api/generate",
@@ -346,7 +455,7 @@ Return ONLY the valid JSON object, nothing else."""
                 result = response.json()
                 json_text = result.get("response", "")
                 
-                return self._parse_structured_response(json_text, major, data_source="hybrid")
+                return self._parse_structured_response(json_text, major, data_source=data_source)
                 
         except httpx.HTTPError as e:
             logger.error(f"Ollama structuring failed: {e}")
@@ -431,8 +540,17 @@ Return ONLY valid JSON matching this exact schema:
         Parse JSON response into structured UniversityData.
         
         Handles normalized schema with both institutional and major-specific data.
+        SAT scores of 0 or out of valid range (400-1600) are replaced with None.
         """
         universities = []
+        
+        def validate_sat(score) -> Optional[int]:
+            """Validate SAT score - must be 400-1600, else None."""
+            try:
+                val = int(score) if score else 0
+                return val if 400 <= val <= 1600 else None
+            except (ValueError, TypeError):
+                return None
         
         try:
             data = json.loads(text)
@@ -440,12 +558,16 @@ Return ONLY valid JSON matching this exact schema:
             
             for uni in uni_list:
                 try:
+                    # Validate SAT scores (0 or out-of-range becomes None)
+                    sat_25 = validate_sat(uni.get("sat_25th"))
+                    sat_75 = validate_sat(uni.get("sat_75th"))
+                    
                     universities.append(UniversityData(
                         name=uni.get("name", "Unknown University"),
                         acceptance_rate=float(uni.get("acceptance_rate", 0.5)),
                         median_gpa=float(uni.get("median_gpa", 3.5)),
-                        sat_25th=int(uni.get("sat_25th", 1200)),
-                        sat_75th=int(uni.get("sat_75th", 1400)),
+                        sat_25th=sat_25,
+                        sat_75th=sat_75,
                         major_ranking=uni.get("major_strength_score"),
                         need_blind_international=bool(uni.get("need_blind_international", False)),
                         data_source=data_source,

@@ -227,11 +227,9 @@ Format the response as a clear college list with:
 For each school, include match percentage and brief reasoning.
 Use markdown formatting. Be conversational and encouraging."""
 
-        # Route to appropriate LLM provider
-        if settings.llm_provider == "ollama":
-            final_output = await _generate_with_ollama(prompt)
-        else:
-            final_output = await _generate_with_gemini(prompt)
+        # ALWAYS use Ollama for response generation
+        # (llm_provider controls SEARCH, not response generation)
+        final_output = await _generate_with_ollama(prompt)
         
         if not final_output:
             final_output = format_recommendations_for_output(recommendations, state)
