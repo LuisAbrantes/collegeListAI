@@ -3,6 +3,17 @@ Application Settings for College List AI
 
 Centralized configuration using Pydantic Settings with .env support.
 All environment variables are validated at startup.
+
+PROVIDER ARCHITECTURE:
+======================
+- SEARCH_PROVIDER: Who performs web search for college data
+  - perplexity: Perplexity Sonar API (recommended)
+  - gemini: Google Gemini with Search Grounding
+  
+- SYNTHESIS_PROVIDER: Who structures JSON and generates responses
+  - groq: Groq Cloud API (fast, LLaMA 3.3)
+  - perplexity: Perplexity Sonar (use same API for everything)
+  - ollama: Local Ollama (free, no rate limits)
 """
 
 import os
@@ -16,10 +27,9 @@ class Settings(BaseSettings):
     """
     Application settings loaded from environment variables.
     
-    LLM_PROVIDER controls which service handles AI tasks:
-    - ollama: Local inference (default for dev, no API costs)
-    - gemini: Google Gemini with Search Grounding
-    - perplexity: Perplexity Sonar API (best for search, avoids 429s)
+    Two-provider architecture:
+    - SEARCH_PROVIDER: Web search (perplexity or gemini)
+    - SYNTHESIS_PROVIDER: JSON structuring + response generation (groq, perplexity, ollama)
     """
     
     # Supabase Configuration
@@ -27,7 +37,7 @@ class Settings(BaseSettings):
     supabase_anon_key: Optional[str] = None
     supabase_service_role_key: str
     
-    # Google AI Configuration (accepts GOOGLE_API_KEY or GEMINI_API_KEY)
+    # Google AI Configuration
     google_api_key: Optional[str] = None
     gemini_api_key: Optional[str] = None
     gemini_model: str = "gemini-2.0-flash"
@@ -52,19 +62,36 @@ class Settings(BaseSettings):
     max_recommendations: int = 10
     similarity_threshold: float = 0.7
     
-    # UNIFIED LLM Provider Configuration
-    # ollama = local inference (free, no rate limits)
-    # gemini = Google Gemini with Search Grounding
-    # perplexity = Perplexity Sonar API (best for web search)
-    llm_provider: Literal["ollama", "gemini", "perplexity"] = "ollama"
+    # ============================================================
+    # PROVIDER CONFIGURATION
+    # ============================================================
     
-    # Ollama Configuration (for llm_provider=ollama)
+    # SEARCH_PROVIDER: Who performs web search for college data
+    # - perplexity: Perplexity Sonar API (recommended, best for search)
+    # - gemini: Google Gemini with Search Grounding
+    search_provider: Literal["perplexity", "gemini"] = "perplexity"
+    
+    # SYNTHESIS_PROVIDER: Who structures JSON and generates responses
+    # - groq: Groq Cloud API (fast inference, LLaMA 3.3)
+    # - perplexity: Perplexity Sonar (same API for search + synthesis)
+    # - ollama: Local Ollama (free, no rate limits, but slow)
+    synthesis_provider: Literal["groq", "perplexity", "ollama"] = "groq"
+    
+    # ============================================================
+    # PROVIDER-SPECIFIC CONFIGURATION
+    # ============================================================
+    
+    # Perplexity Configuration (for search and/or synthesis)
+    perplexity_api_key: Optional[str] = None
+    perplexity_model: str = "sonar"  # sonar, sonar-pro
+    
+    # Groq Configuration (for synthesis)
+    groq_api_key: Optional[str] = None
+    groq_model: str = "llama-3.3-70b-versatile"  # or mixtral-8x7b-32768
+    
+    # Ollama Configuration (for synthesis, fully local)
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "gemma3:27b"
-    
-    # Perplexity Configuration (for llm_provider=perplexity)
-    perplexity_api_key: Optional[str] = None
-    perplexity_model: str = "sonar"  # sonar (standard), sonar-pro (better)
     
     # Rate Limiting
     rate_limit_requests: int = 100
@@ -75,7 +102,7 @@ class Settings(BaseSettings):
     retry_base_delay: float = 1.0
     retry_max_delay: float = 10.0
     
-    # Database Configuration (SQLModel/SQLAlchemy)
+    # Database Configuration
     supabase_password: Optional[str] = None
     database_url: Optional[str] = None
     database_pool_size: int = 5
@@ -92,7 +119,7 @@ class Settings(BaseSettings):
     
     @model_validator(mode="after")
     def validate_api_keys(self) -> "Settings":
-        """Validate API keys based on selected llm_provider."""
+        """Validate API keys based on selected providers."""
         import logging
         logger = logging.getLogger(__name__)
         
@@ -100,20 +127,24 @@ class Settings(BaseSettings):
         if not self.google_api_key and self.gemini_api_key:
             self.google_api_key = self.gemini_api_key
         
-        # Validate based on provider
-        if self.llm_provider == "gemini":
-            if not self.google_api_key:
-                raise ValueError(
-                    "GOOGLE_API_KEY or GEMINI_API_KEY required when LLM_PROVIDER=gemini"
-                )
-        
-        elif self.llm_provider == "perplexity":
+        # Validate SEARCH_PROVIDER
+        if self.search_provider == "perplexity":
             if not self.perplexity_api_key:
-                raise ValueError(
-                    "PERPLEXITY_API_KEY required when LLM_PROVIDER=perplexity"
-                )
+                raise ValueError("PERPLEXITY_API_KEY required when SEARCH_PROVIDER=perplexity")
+        elif self.search_provider == "gemini":
+            if not self.google_api_key:
+                raise ValueError("GOOGLE_API_KEY required when SEARCH_PROVIDER=gemini")
         
-        # ollama doesn't require any API keys (local)
+        # Validate SYNTHESIS_PROVIDER
+        if self.synthesis_provider == "groq":
+            if not self.groq_api_key:
+                raise ValueError("GROQ_API_KEY required when SYNTHESIS_PROVIDER=groq")
+        elif self.synthesis_provider == "perplexity":
+            if not self.perplexity_api_key:
+                raise ValueError("PERPLEXITY_API_KEY required when SYNTHESIS_PROVIDER=perplexity")
+        # ollama doesn't require API keys (local)
+        
+        logger.info(f"Providers configured: search={self.search_provider}, synthesis={self.synthesis_provider}")
         
         return self
     

@@ -227,9 +227,16 @@ Format the response as a clear college list with:
 For each school, include match percentage and brief reasoning.
 Use markdown formatting. Be conversational and encouraging."""
 
-        # ALWAYS use Ollama for response generation
-        # (llm_provider controls SEARCH, not response generation)
-        final_output = await _generate_with_ollama(prompt)
+        # Route response generation based on synthesis_provider
+        if settings.synthesis_provider == "groq":
+            logger.info("[SYNTHESIS] Groq generating response...")
+            final_output = await _generate_with_groq(prompt)
+        elif settings.synthesis_provider == "perplexity":
+            logger.info("[SYNTHESIS] Perplexity generating response...")
+            final_output = await _generate_with_perplexity(prompt)
+        else:  # ollama
+            logger.info("[SYNTHESIS] Ollama generating response...")
+            final_output = await _generate_with_ollama(prompt)
         
         if not final_output:
             final_output = format_recommendations_for_output(recommendations, state)
@@ -408,3 +415,85 @@ async def _generate_with_gemini(prompt: str) -> str:
         )
     )
     return response.text if response.text else ""
+
+
+async def _generate_with_groq(prompt: str) -> str:
+    """
+    Generate response using Groq API.
+    
+    Groq provides fast inference (~500 tokens/s) with LLaMA 3.3 70B.
+    Uses OpenAI-compatible API format.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {settings.groq_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": settings.groq_model,
+                    "messages": [
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.7,
+                    "max_tokens": 2000,
+                },
+            )
+            
+            if response.status_code == 429:
+                logger.warning("Groq rate limit hit, falling back to Ollama...")
+                return await _generate_with_ollama(prompt)
+            
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+            
+    except httpx.HTTPError as e:
+        logger.error(f"Groq API error: {e}, falling back to Ollama...")
+        return await _generate_with_ollama(prompt)
+    except (KeyError, IndexError) as e:
+        logger.error(f"Groq response parsing error: {e}")
+        return ""
+
+
+async def _generate_with_perplexity(prompt: str) -> str:
+    """
+    Generate response using Perplexity Sonar API.
+    
+    For Production: Use same Perplexity API for search + synthesis.
+    Simplifies architecture (one vendor, one API key).
+    """
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                "https://api.perplexity.ai/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {settings.perplexity_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": settings.perplexity_model,
+                    "messages": [
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.7,
+                    "max_tokens": 2000,
+                },
+            )
+            
+            if response.status_code == 429:
+                logger.warning("Perplexity rate limit hit, falling back to Ollama...")
+                return await _generate_with_ollama(prompt)
+            
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+            
+    except httpx.HTTPError as e:
+        logger.error(f"Perplexity API error: {e}, falling back to Ollama...")
+        return await _generate_with_ollama(prompt)
+    except (KeyError, IndexError) as e:
+        logger.error(f"Perplexity response parsing error: {e}")
+        return ""

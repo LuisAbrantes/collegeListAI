@@ -72,12 +72,17 @@ class CollegeSearchService:
     """
     Hybrid search service implementing the Data Flywheel.
     
-    ARCHITECTURE (based on llm_provider setting):
-    - perplexity: Perplexity Sonar → Ollama structuring (best for search)
-    - gemini: Gemini Search Grounding → Ollama structuring  
-    - ollama: Ollama-only discovery and structuring (fully local)
+    TWO-PROVIDER ARCHITECTURE:
+    ==========================
     
-    All paths use Ollama for JSON structuring to avoid rate limits.
+    SEARCH_PROVIDER (who performs web search):
+    - perplexity: Perplexity Sonar API (recommended)
+    - gemini: Google Gemini with Search Grounding
+    
+    SYNTHESIS_PROVIDER (who structures JSON):
+    - groq: Groq Cloud API (fast, LLaMA 3.3)
+    - perplexity: Perplexity Sonar (same API for everything)
+    - ollama: Local Ollama (free, slower)
     """
     
     def __init__(
@@ -90,17 +95,17 @@ class CollegeSearchService:
         self._init_clients()
     
     def _init_clients(self):
-        """Initialize clients based on llm_provider setting."""
-        # Gemini client (used if llm_provider == gemini)
+        """Initialize clients based on provider settings."""
+        # Gemini client (for search_provider == gemini)
         if settings.google_api_key:
             self.gemini_client = genai.Client(api_key=settings.google_api_key)
         else:
             self.gemini_client = None
         
-        # Perplexity uses httpx (no persistent client needed)
-        self.perplexity_configured = bool(settings.perplexity_api_key)
-        
-        logger.info(f"LLM provider configured: {settings.llm_provider}")
+        logger.info(
+            f"Providers: search={settings.search_provider}, "
+            f"synthesis={settings.synthesis_provider}"
+        )
 
     
     async def hybrid_search(
@@ -199,35 +204,50 @@ class CollegeSearchService:
         student_type: str
     ) -> List[UniversityData]:
         """
-        HYBRID LLM PIPELINE based on llm_provider setting:
-        - perplexity: Perplexity Sonar raw search → Ollama structuring
-        - gemini: Gemini Search Grounding → Ollama structuring
-        - ollama: Ollama-only discovery (fully local)
-        """
-        raw_text = None
-        data_source = settings.llm_provider  # Track which provider fetched the data
+        TWO-PROVIDER PIPELINE:
         
-        # Route based on llm_provider
-        if settings.llm_provider == "perplexity":
-            logger.info("Using Perplexity Sonar for web search...")
+        Step 1: SEARCH (search_provider)
+        - perplexity: Perplexity Sonar API
+        - gemini: Google Gemini with Search Grounding
+        
+        Step 2: SYNTHESIS (synthesis_provider)
+        - groq: Groq Cloud API (fast)
+        - perplexity: Perplexity Sonar (same API)
+        - ollama: Local Ollama (free)
+        """
+        # ======================
+        # STEP 1: WEB SEARCH
+        # ======================
+        raw_text = None
+        data_source = settings.search_provider
+        
+        if settings.search_provider == "perplexity":
+            logger.info("[SEARCH] Using Perplexity Sonar...")
             raw_text = await self._perplexity_raw_search_with_retry(major, profile, student_type)
             
-        elif settings.llm_provider == "gemini":
-            logger.info("Using Gemini for web search...")
+        elif settings.search_provider == "gemini":
+            logger.info("[SEARCH] Using Gemini with Search Grounding...")
             raw_text = await self._gemini_raw_search_with_retry(major, profile, student_type)
+        
+        # Search failed - fallback to Ollama standalone
+        if not raw_text:
+            logger.warning(f"[SEARCH] {settings.search_provider} failed, using Ollama standalone")
+            return await self._ollama_standalone_discovery(major, profile, student_type)
+        
+        # ======================
+        # STEP 2: SYNTHESIS (JSON structuring)
+        # ======================
+        if settings.synthesis_provider == "groq":
+            logger.info(f"[SYNTHESIS] Groq structuring {data_source} data...")
+            return await self._groq_structure_text(raw_text, major, data_source)
+            
+        elif settings.synthesis_provider == "perplexity":
+            logger.info(f"[SYNTHESIS] Perplexity structuring {data_source} data...")
+            return await self._perplexity_structure_text(raw_text, major, data_source)
             
         else:  # ollama
-            logger.info("Using Ollama-only mode (fully local)...")
-            return await self._ollama_standalone_discovery(major, profile, student_type)
-        
-        # If API search failed, fallback to Ollama
-        if not raw_text:
-            logger.warning(f"{settings.llm_provider} search failed, falling back to Ollama-only")
-            return await self._ollama_standalone_discovery(major, profile, student_type)
-        
-        # Structure the raw text via Ollama (pass data_source for cache labeling)
-        logger.info(f"Sending {data_source} raw text to Ollama for JSON structuring...")
-        return await self._ollama_structure_text(raw_text, major, data_source)
+            logger.info(f"[SYNTHESIS] Ollama structuring {data_source} data...")
+            return await self._ollama_structure_text(raw_text, major, data_source)
     
     async def _perplexity_raw_search_with_retry(
         self,
@@ -460,6 +480,165 @@ Return ONLY the valid JSON object, nothing else."""
         except httpx.HTTPError as e:
             logger.error(f"Ollama structuring failed: {e}")
             # Try to parse anything useful from the raw text
+            return self._fallback_parse_raw_text(raw_text, major)
+    
+    async def _groq_structure_text(
+        self,
+        raw_text: str,
+        major: str,
+        data_source: str = "perplexity"
+    ) -> List[UniversityData]:
+        """
+        Use Groq API to structure raw text into JSON.
+        
+        Groq provides fast inference (~500 tokens/s) with LLaMA 3.3 70B.
+        Uses OpenAI-compatible API format.
+        """
+        structuring_prompt = f"""You are a data extraction assistant. Extract university information from the following text and format it as valid JSON.
+
+RAW TEXT:
+{raw_text}
+
+OUTPUT FORMAT (JSON):
+{{
+  "universities": [
+    {{
+      "name": "University Name",
+      "campus_setting": "URBAN" | "SUBURBAN" | "RURAL",
+      "acceptance_rate": 0.15,
+      "median_gpa": 3.9,
+      "sat_25th": 1400,
+      "sat_75th": 1550,
+      "major_strength_score": 8,
+      "need_blind_international": true,
+      "meets_full_need": true
+    }}
+  ]
+}}
+
+RULES:
+1. acceptance_rate must be a decimal between 0 and 1 (e.g., 15% → 0.15)
+2. median_gpa must be between 0.0 and 4.0
+3. SAT scores must be between 400 and 1600 (use 0 if unknown)
+4. major_strength_score must be an integer from 1 to 10
+5. campus_setting must be exactly "URBAN", "SUBURBAN", or "RURAL"
+
+Return ONLY the valid JSON object."""
+
+        try:
+            logger.info(f"Groq is structuring the {data_source} response...")
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.groq_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": settings.groq_model,
+                        "messages": [
+                            {"role": "user", "content": structuring_prompt}
+                        ],
+                        "response_format": {"type": "json_object"},
+                        "temperature": 0.1,
+                    },
+                )
+                
+                if response.status_code == 429:
+                    logger.warning("Groq rate limit hit, falling back to Ollama...")
+                    return await self._ollama_structure_text(raw_text, major, data_source)
+                
+                response.raise_for_status()
+                data = response.json()
+                json_text = data["choices"][0]["message"]["content"]
+                
+                logger.info(f"Groq structured response received")
+                return self._parse_structured_response(json_text, major, data_source=data_source)
+                
+        except httpx.HTTPError as e:
+            logger.error(f"Groq structuring failed: {e}, falling back to Ollama...")
+            return await self._ollama_structure_text(raw_text, major, data_source)
+        except (KeyError, IndexError) as e:
+            logger.error(f"Groq response parsing error: {e}")
+            return self._fallback_parse_raw_text(raw_text, major)
+    
+    async def _perplexity_structure_text(
+        self,
+        raw_text: str,
+        major: str,
+        data_source: str = "perplexity"
+    ) -> List[UniversityData]:
+        """
+        Use Perplexity Sonar to structure raw text into JSON.
+        
+        For Production: Use same Perplexity API for both search AND synthesis.
+        This simplifies the architecture (one vendor, one API key).
+        """
+        structuring_prompt = f"""You are a data extraction assistant. Extract university information from the following text and format it as valid JSON.
+
+RAW TEXT:
+{raw_text}
+
+OUTPUT FORMAT (JSON):
+{{
+  "universities": [
+    {{
+      "name": "University Name",
+      "campus_setting": "URBAN" | "SUBURBAN" | "RURAL",
+      "acceptance_rate": 0.15,
+      "median_gpa": 3.9,
+      "sat_25th": 1400,
+      "sat_75th": 1550,
+      "major_strength_score": 8,
+      "need_blind_international": true,
+      "meets_full_need": true
+    }}
+  ]
+}}
+
+RULES:
+1. acceptance_rate must be a decimal between 0 and 1 (e.g., 15% → 0.15)
+2. median_gpa must be between 0.0 and 4.0
+3. SAT scores must be between 400 and 1600 (use 0 if unknown)
+4. major_strength_score must be an integer from 1 to 10
+5. campus_setting must be exactly "URBAN", "SUBURBAN", or "RURAL"
+
+Return ONLY the valid JSON object."""
+
+        try:
+            logger.info(f"Perplexity is structuring the {data_source} response...")
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    "https://api.perplexity.ai/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.perplexity_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": settings.perplexity_model,
+                        "messages": [
+                            {"role": "user", "content": structuring_prompt}
+                        ],
+                        "temperature": 0.1,
+                    },
+                )
+                
+                if response.status_code == 429:
+                    logger.warning("Perplexity rate limit hit, falling back to Ollama...")
+                    return await self._ollama_structure_text(raw_text, major, data_source)
+                
+                response.raise_for_status()
+                data = response.json()
+                json_text = data["choices"][0]["message"]["content"]
+                
+                logger.info("Perplexity structured response received")
+                return self._parse_structured_response(json_text, major, data_source=data_source)
+                
+        except httpx.HTTPError as e:
+            logger.error(f"Perplexity structuring failed: {e}, falling back to Ollama...")
+            return await self._ollama_structure_text(raw_text, major, data_source)
+        except (KeyError, IndexError) as e:
+            logger.error(f"Perplexity response parsing error: {e}")
             return self._fallback_parse_raw_text(raw_text, major)
     
     async def _ollama_standalone_discovery(
