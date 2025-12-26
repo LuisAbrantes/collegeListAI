@@ -1,8 +1,11 @@
 """
 Recommender Node for College List AI
 
-Generates final college recommendations using scored candidates.
-Produces formatted output with match transparency breakdown.
+Generates QUERY-AWARE responses based on intent:
+- GENERATE_LIST: Create college recommendations
+- CLARIFY_QUESTION: Answer the question directly
+- UPDATE_PROFILE: Acknowledge the update
+- FOLLOW_UP: Provide details about previous recommendations
 """
 
 import logging
@@ -13,7 +16,12 @@ from google import genai
 from google.genai import types
 
 from app.config.settings import settings
-from app.agents.state import RecommendationAgentState
+from app.agents.state import (
+    RecommendationAgentState, 
+    QueryIntent,
+    get_effective_major,
+    get_effective_minor,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,22 +30,22 @@ def format_recommendations_for_output(
     recommendations: List[Dict[str, Any]],
     state: RecommendationAgentState
 ) -> str:
-    """
-    Format scored recommendations for final output.
-    
-    Includes match transparency breakdown.
-    """
+    """Format scored recommendations for final output."""
     if not recommendations:
         return "Unable to generate recommendations with your current profile.\n"
     
     profile = state["profile"]
     is_domestic = state["student_type"] == "domestic"
+    major = get_effective_major(state)
+    minor = get_effective_minor(state)
     
     output_parts = []
     
-    # Header
-    major = profile.get("major", "your chosen field")
-    output_parts.append(f"# 🎓 Top University Recommendations for {major}\n\n")
+    # Header with major/minor
+    if minor:
+        output_parts.append(f"# 🎓 Top University Recommendations for {major} (Minor: {minor})\n\n")
+    else:
+        output_parts.append(f"# 🎓 Top University Recommendations for {major}\n\n")
     
     # Group by label
     reaches = [r for r in recommendations if r.get("label") == "Reach"]
@@ -84,7 +92,6 @@ def _format_single_recommendation(rec: Dict[str, Any], is_domestic: bool) -> str
     output += f"**Overall Match: {match_score:.0f}%** | "
     output += f"Admission Probability: ~{admission_prob:.0f}%\n\n"
     
-    # Match transparency breakdown
     if transparency:
         output += "**Match Breakdown:**\n"
         
@@ -113,37 +120,68 @@ def _format_single_recommendation(rec: Dict[str, Any], is_domestic: bool) -> str
 
 async def recommender_node(state: RecommendationAgentState) -> Dict[str, Any]:
     """
-    Recommender node: Generates QUERY-AWARE college recommendations.
+    Recommender node: Generates INTENT-AWARE responses.
     
-    IMPORTANT: This node generates responses based on the ACTUAL user query,
-    not just a template. If the user asks about scholarships, it responds
-    about scholarships. If about specific schools, it responds about those.
-    
-    Supports both Gemini and Ollama providers based on settings.llm_provider.
-    
-    Args:
-        state: Current agent state (includes scored recommendations)
-        
-    Returns:
-        State updates with formatted recommendations
+    Handles different query intents:
+    - GENERATE_LIST: Full college recommendations
+    - CLARIFY_QUESTION: Direct answer without listing colleges
+    - UPDATE_PROFILE: Acknowledge update, offer to regenerate
+    - FOLLOW_UP: Detailed info about specific schools
+    - GENERAL_CHAT: Conversational response
     """
     try:
         recommendations = state.get("recommendations", [])
-        user_query = state.get("user_query", "").lower()
+        user_query = state.get("user_query", "")
         profile = state["profile"]
         is_domestic = state["student_type"] == "domestic"
-        is_follow_up = state.get("is_follow_up", False)
+        query_intent = state.get("query_intent", QueryIntent.GENERATE_LIST)
+        derived_major = state.get("derived_major")
+        derived_minor = state.get("derived_minor")
+        conversation_history = state.get("conversation_history", [])
         
-        # Handle empty recommendations gracefully
+        # Get effective major/minor for context
+        effective_major = get_effective_major(state)
+        effective_minor = get_effective_minor(state)
+        
+        logger.info(f"Recommender: Handling intent {query_intent.value} for query: '{user_query[:50]}...'")
+        
+        # === HANDLE UPDATE_PROFILE INTENT ===
+        if query_intent == QueryIntent.UPDATE_PROFILE:
+            update_response = _build_update_response(derived_major, derived_minor, effective_major, effective_minor)
+            return {
+                "stream_content": [update_response],
+                "recommendations": [],
+            }
+        
+        # === HANDLE CLARIFY_QUESTION INTENT ===
+        if query_intent == QueryIntent.CLARIFY_QUESTION:
+            clarify_response = await _generate_clarify_response(
+                user_query, profile, effective_major, effective_minor, conversation_history
+            )
+            return {
+                "stream_content": [clarify_response],
+                "recommendations": [],
+            }
+        
+        # === HANDLE GENERAL_CHAT INTENT ===
+        if query_intent == QueryIntent.GENERAL_CHAT:
+            chat_response = await _generate_chat_response(user_query, profile)
+            return {
+                "stream_content": [chat_response],
+                "recommendations": [],
+            }
+        
+        # === HANDLE EMPTY RECOMMENDATIONS ===
         if not recommendations:
-            logger.warning("Recommender received 0 recommendations from scorer. Returning fallback response.")
+            logger.warning("Recommender received 0 recommendations from scorer.")
             fallback_message = (
-                "I couldn't find specific university recommendations based on your profile. "
-                "This could be due to limited data in our cache. "
+                f"I couldn't find specific university recommendations for {effective_major}"
+                + (f" with minor in {effective_minor}" if effective_minor else "")
+                + ". This could be due to limited data in our cache. "
                 "Please try again or adjust your profile settings.\n\n"
                 "In the meantime, consider exploring:\n"
-                "- **Reach**: Top 20 universities in your field\n"
-                "- **Target**: State flagship universities\n"
+                f"- **Reach**: Top 20 universities for {effective_major}\n"
+                "- **Target**: State flagship universities with strong programs\n"
                 "- **Safety**: Universities with higher acceptance rates in your major"
             )
             return {
@@ -151,74 +189,43 @@ async def recommender_node(state: RecommendationAgentState) -> Dict[str, Any]:
                 "recommendations": [],
             }
         
+        # === HANDLE FOLLOW_UP INTENT ===
+        if query_intent == QueryIntent.FOLLOW_UP:
+            follow_up_response = await _generate_follow_up_response(
+                user_query, recommendations, profile, is_domestic, conversation_history
+            )
+            return {
+                "stream_content": [follow_up_response],
+                "recommendations": recommendations,
+            }
+        
+        # === HANDLE GENERATE_LIST INTENT (Default) ===
         # Build context from recommendations
         uni_summary = "\n".join([
-            f"- {r.get('name')}: {r.get('label')} school, {r.get('match_score', 0):.0f}% match, Financial: {r.get('match_transparency', {}).get('financial_fit', 0):.0f}%"
+            f"- {r.get('name')}: {r.get('label')} school, {r.get('match_score', 0):.0f}% match"
             for r in recommendations[:5]
         ])
         
-        # Determine intent from query
-        is_scholarship_query = any(kw in user_query for kw in 
-            ["scholarship", "financial", "aid", "cost", "afford", "money", "fee", "tuition"])
-        is_specific_school_query = any(kw in user_query for kw in 
-            ["mit", "stanford", "harvard", "berkeley", "cmu", "carnegie", "georgia tech"])
-        is_chance_query = any(kw in user_query for kw in 
-            ["chance", "odds", "likely", "probability", "can i get", "will i"])
+        nationality = profile.get("nationality", "unknown")
         
-        # Build appropriate prompt based on intent
-        if is_follow_up or is_scholarship_query:
-            prompt = f"""You are a college advisor. The student asked: "{state.get('user_query', '')}"
+        prompt = f"""You are a college advisor. Generate recommendations for: "{user_query}"
 
 Student Profile:
-- Major: {profile.get('major', 'Undeclared')}
+- Major: {effective_major}
+{f"- Minor: {effective_minor}" if effective_minor else ""}
 - GPA: {profile.get('gpa', 3.5)}/4.0
-- Type: {"Domestic" if is_domestic else f"International from {profile.get('nationality', 'unknown')}"}
-- Income Tier: {profile.get('household_income_tier', 'MEDIUM')}
-
-Previously recommended schools:
-{uni_summary}
-
-ANSWER THE SPECIFIC QUESTION. If about scholarships, explain:
-1. Which of these schools offer best financial aid for this student
-2. Specific scholarship opportunities (need-blind, merit scholarships)
-3. Estimated cost after aid
-
-Be conversational, specific, and helpful. Use markdown formatting.
-DO NOT just repeat the list of schools. Answer the question directly."""
-
-        elif is_chance_query:
-            prompt = f"""You are a college advisor. The student asked: "{state.get('user_query', '')}"
-
-Student Profile:
-- GPA: {profile.get('gpa', 3.5)}/4.0
-- SAT: {profile.get('sat_score', 'Not provided')}
-- Major: {profile.get('major', 'Undeclared')}
-
-Previously recommended schools with admission probability:
-{uni_summary}
-
-Provide a realistic chance assessment. Be encouraging but honest.
-Explain what affects their chances at each tier (Reach/Target/Safety)."""
-
-        else:
-            # Default: Generate college list with context
-            prompt = f"""You are a college advisor. Generate recommendations for: "{state.get('user_query', '')}"
-
-Student Profile:
-- Major: {profile.get('major', 'Undeclared')}
-- GPA: {profile.get('gpa', 3.5)}/4.0
-- Type: {"Domestic" if is_domestic else f"International from {profile.get('nationality', 'unknown')}"}
+- Type: {"Domestic" if is_domestic else f"International student from {nationality}"}
 
 Based on analysis, here are the best matches:
 {uni_summary}
 
 Format the response as a clear college list with:
-- 🎯 **Reach Schools** (1 school)
-- ✅ **Target Schools** (2 schools)
-- 🛡️ **Safety Schools** (2 schools)
+- 🎯 **Reach Schools** (competitive admissions)
+- ✅ **Target Schools** (good chances)  
+- 🛡️ **Safety Schools** (likely acceptance)
 
 For each school, include match percentage and brief reasoning.
-Use markdown formatting. Be conversational."""
+Use markdown formatting. Be conversational and encouraging."""
 
         # Route to appropriate LLM provider
         if settings.llm_provider == "ollama":
@@ -229,7 +236,7 @@ Use markdown formatting. Be conversational."""
         if not final_output:
             final_output = format_recommendations_for_output(recommendations, state)
         
-        logger.info(f"Recommender generated query-aware response for: '{user_query[:50]}...'")
+        logger.info(f"Recommender generated response for intent {query_intent.value}")
         
         return {
             "stream_content": [final_output],
@@ -239,7 +246,6 @@ Use markdown formatting. Be conversational."""
     except Exception as e:
         logger.error(f"Recommender node error: {e}")
         
-        # Fallback: format whatever recommendations we have
         recommendations = state.get("recommendations", [])
         fallback_output = format_recommendations_for_output(recommendations, state)
         
@@ -250,10 +256,130 @@ Use markdown formatting. Be conversational."""
         }
 
 
+def _build_update_response(
+    derived_major: str | None,
+    derived_minor: str | None,
+    effective_major: str,
+    effective_minor: str | None
+) -> str:
+    """Build response acknowledging profile updates."""
+    updates = []
+    
+    if derived_major:
+        updates.append(f"**Major**: {derived_major}")
+    if derived_minor:
+        updates.append(f"**Minor**: {derived_minor}")
+    
+    if not updates:
+        return "I didn't detect any profile updates. Could you please clarify what you'd like to change?"
+    
+    response = "Got it! I've noted the following updates:\n\n"
+    response += "\n".join(f"- {u}" for u in updates)
+    response += "\n\n"
+    
+    response += f"Your current profile now shows:\n"
+    response += f"- **Major**: {effective_major}\n"
+    if effective_minor:
+        response += f"- **Minor**: {effective_minor}\n"
+    
+    response += "\nWould you like me to generate new college recommendations based on this updated profile?"
+    
+    return response
+
+
+async def _generate_clarify_response(
+    query: str,
+    profile: Dict[str, Any],
+    major: str,
+    minor: str | None,
+    history: List[Dict[str, str]]
+) -> str:
+    """Generate response for clarifying questions."""
+    
+    # Build context from history
+    history_context = ""
+    if history:
+        history_context = "\n".join([
+            f"{msg.get('role', 'unknown').title()}: {msg.get('content', '')[:100]}..."
+            for msg in history[-3:]  # Last 3 messages
+        ])
+    
+    prompt = f"""You are a helpful college advisor assistant. Answer this question directly:
+
+Question: "{query}"
+
+Student Context:
+- Major: {major}
+{f"- Minor: {minor}" if minor else ""}
+- GPA: {profile.get('gpa', 'Not specified')}
+- Citizenship: {profile.get('citizenship_status', 'Not specified')}
+- Nationality: {profile.get('nationality', 'Not specified')}
+
+{("Recent conversation:" + chr(10) + history_context) if history_context else ""}
+
+IMPORTANT: Answer the question directly and concisely. Do NOT generate a college list unless explicitly asked.
+Use markdown formatting."""
+
+    if settings.llm_provider == "ollama":
+        return await _generate_with_ollama(prompt)
+    return await _generate_with_gemini(prompt)
+
+
+async def _generate_chat_response(query: str, profile: Dict[str, Any]) -> str:
+    """Generate conversational response for general chat."""
+    prompt = f"""You are a friendly college advisor. Respond to: "{query}"
+
+Be conversational, helpful, and brief. If the user seems to want college recommendations, 
+ask them to tell you about their intended major and academic profile.
+
+Use markdown formatting."""
+
+    if settings.llm_provider == "ollama":
+        return await _generate_with_ollama(prompt)
+    return await _generate_with_gemini(prompt)
+
+
+async def _generate_follow_up_response(
+    query: str,
+    recommendations: List[Dict[str, Any]],
+    profile: Dict[str, Any],
+    is_domestic: bool,
+    history: List[Dict[str, str]]
+) -> str:
+    """Generate response for follow-up questions about recommendations."""
+    
+    # Build context from recommendations
+    uni_summary = "\n".join([
+        f"- {r.get('name')}: {r.get('label')} ({r.get('match_score', 0):.0f}% match)"
+        for r in recommendations[:5]
+    ])
+    
+    prompt = f"""You are a college advisor. The student asked a follow-up question: "{query}"
+
+Previously recommended universities:
+{uni_summary}
+
+Student Profile:
+- GPA: {profile.get('gpa', 3.5)}/4.0
+- Type: {"Domestic US" if is_domestic else f"International from {profile.get('nationality', 'unknown')}"}
+- Income Tier: {profile.get('household_income_tier', 'Not specified')}
+
+Answer the specific question about these schools. If asking about:
+- Scholarships/financial aid: Explain which schools offer better aid
+- Chances/probability: Give realistic assessment
+- Specific school: Provide detailed information
+
+Be conversational and helpful. Use markdown formatting."""
+
+    if settings.llm_provider == "ollama":
+        return await _generate_with_ollama(prompt)
+    return await _generate_with_gemini(prompt)
+
+
 async def _generate_with_ollama(prompt: str) -> str:
     """Generate response using local Ollama API."""
     try:
-        logger.info("Ollama is generating the structured response...")
+        logger.info("Ollama is generating the response...")
         async with httpx.AsyncClient(timeout=300.0) as client:
             response = await client.post(
                 f"{settings.ollama_base_url}/api/generate",
@@ -284,50 +410,3 @@ async def _generate_with_gemini(prompt: str) -> str:
         )
     )
     return response.text if response.text else ""
-
-
-def _extract_reasoning(content: str, uni_name: str) -> str:
-    """Extract reasoning for a university from AI response."""
-    try:
-        # Find section for this university
-        start = content.find(uni_name)
-        if start == -1:
-            return ""
-        
-        section = content[start:start + 500]
-        
-        # Find "Reasoning:" line
-        if "Reasoning:" in section:
-            reason_start = section.find("Reasoning:") + len("Reasoning:")
-            reason_end = section.find("\n", reason_start)
-            if reason_end > reason_start:
-                return section[reason_start:reason_end].strip()
-        
-        return ""
-    except:
-        return ""
-
-
-def _extract_financial(content: str, uni_name: str, is_domestic: bool) -> str:
-    """Extract financial summary for a university."""
-    try:
-        start = content.find(uni_name)
-        if start == -1:
-            return ""
-        
-        section = content[start:start + 500]
-        
-        if "Financial:" in section:
-            fin_start = section.find("Financial:") + len("Financial:")
-            fin_end = section.find("\n", fin_start)
-            if fin_end > fin_start:
-                return section[fin_start:fin_end].strip()
-        
-        # Default based on student type
-        if is_domestic:
-            return "Check FAFSA eligibility and institutional aid."
-        else:
-            return "Review international student scholarship options."
-    except:
-        return ""
-

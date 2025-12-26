@@ -5,13 +5,15 @@ Implements HYBRID SEARCH strategy via CollegeSearchService:
 - Phase 1: Local cache query (fast, via JOINed tables)
 - Phase 2: Gemini grounding (if cache insufficient)
 - Phase 3: Auto-populate cache (normalized Data Flywheel)
+
+Uses get_effective_major() to respect derived_major from user prompt.
 """
 
 import logging
 from typing import Dict, Any, List
 
 from app.config.settings import settings
-from app.agents.state import RecommendationAgentState
+from app.agents.state import RecommendationAgentState, get_effective_major
 from app.infrastructure.db.database import get_db_manager
 from app.infrastructure.db.repositories.college_repository import (
     CollegeRepository,
@@ -26,20 +28,16 @@ async def researcher_node(state: RecommendationAgentState) -> Dict[str, Any]:
     """
     Researcher node: Implements hybrid search strategy.
     
-    Uses CollegeSearchService to:
-    1. Check local cache first (fast, no API cost)
-    2. Trigger Gemini discovery only if needed
-    3. Auto-populate cache with new discoveries
+    Uses get_effective_major() to prioritize:
+    1. derived_major (from user's current message)
+    2. profile.major (from stored profile)
     
-    Args:
-        state: Current agent state
-        
-    Returns:
-        State updates with discovered universities
+    This ensures user corrections in chat are respected.
     """
     try:
         profile = state["profile"]
-        major = profile.get("major", "General Studies")
+        # Use effective major (derived > profile)
+        major = get_effective_major(state)
         student_type = state["student_type"]
         force_refresh = state.get("force_refresh", False)
         

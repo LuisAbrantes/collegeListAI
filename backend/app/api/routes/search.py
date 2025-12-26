@@ -67,6 +67,7 @@ class RecommendRequest(BaseModel):
     # Academic metrics
     gpa: float = Field(..., ge=0.0, le=4.0)
     major: str = Field(..., min_length=2, max_length=100)
+    minor: Optional[str] = Field(None, min_length=2, max_length=100)  # NEW: Minor field
     sat_score: Optional[int] = Field(None, ge=400, le=1600)
     act_score: Optional[int] = Field(None, ge=1, le=36)
     
@@ -95,6 +96,12 @@ class RecommendRequest(BaseModel):
     
     # Chat persistence
     thread_id: Optional[str] = Field(None, description="Chat thread ID for persistence")
+    
+    # NEW: Conversation history for context
+    conversation_history: Optional[List[dict]] = Field(
+        None, 
+        description="Previous messages in format [{'role': 'user'|'assistant', 'content': '...'}]"
+    )
 
 
 class ExclusionRequest(BaseModel):
@@ -200,12 +207,12 @@ async def get_recommendations(
     from app.agents.state import StudentProfile
     
     try:
-        # Build profile from request
         profile: StudentProfile = {
             "citizenship_status": request.citizenship_status,
             "nationality": request.nationality,
             "gpa": request.gpa,
             "major": request.major,
+            "minor": request.minor,  # NEW
             "sat_score": request.sat_score,
             "act_score": request.act_score,
             "state_of_residence": request.state_of_residence,
@@ -222,11 +229,12 @@ async def get_recommendations(
             "ap_classes": request.ap_classes,
         }
         
-        # Run agent workflow
+        # Run agent workflow with conversation history
         result = await generate_recommendations(
             user_query=request.query,
             profile=profile,
             excluded_colleges=request.excluded_colleges,
+            conversation_history=request.conversation_history,  # NEW
         )
         
         # Extract content from result
@@ -270,12 +278,12 @@ async def stream_recommendations(
     
     async def event_generator():
         try:
-            # Build profile from request
             profile: StudentProfile = {
                 "citizenship_status": request.citizenship_status,
                 "nationality": request.nationality,
                 "gpa": request.gpa,
                 "major": request.major,
+                "minor": request.minor,  # NEW
                 "sat_score": request.sat_score,
                 "act_score": request.act_score,
                 "state_of_residence": request.state_of_residence,
@@ -292,11 +300,12 @@ async def stream_recommendations(
                 "ap_classes": request.ap_classes,
             }
             
-            # Stream from agent
+            # Stream from agent with conversation history
             async for chunk in agent_stream(
                 user_query=request.query,
                 profile=profile,
                 excluded_colleges=request.excluded_colleges,
+                conversation_history=request.conversation_history,  # NEW
             ):
                 yield {
                     "event": "chunk",
