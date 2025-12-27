@@ -12,17 +12,17 @@ then caches results in pgvector to reduce API costs.
 
 import asyncio
 import json
-import os
+from pathlib import Path
 from typing import AsyncGenerator, Optional, List, Dict, Any
 import logging
 
 from google import genai
 from google.genai import types
 
+from app.config.settings import settings
 from app.infrastructure.exceptions import (
     AIServiceError,
     RateLimitError,
-    ConfigurationError,
 )
 
 
@@ -30,10 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 # Load system prompt from file
-SYSTEM_PROMPT_PATH = os.path.join(
-    os.path.dirname(__file__), 
-    "SYSTEM_PROMPT.md"
-)
+SYSTEM_PROMPT_PATH = Path(__file__).parent / "SYSTEM_PROMPT.md"
 
 
 def load_system_prompt() -> str:
@@ -61,9 +58,7 @@ class GeminiService:
     _client: Optional[genai.Client] = None
     _initialized: bool = False
     
-    # Configuration
-    DEFAULT_MODEL = "gemini-2.5-flash"
-    EMBEDDING_MODEL = "text-embedding-004"
+    # Configuration constants
     MAX_OUTPUT_TOKENS = 8192
     TEMPERATURE = 0.7
     
@@ -79,21 +74,21 @@ class GeminiService:
             GeminiService._initialized = True
     
     def _initialize(self) -> None:
-        """Initialize Gemini client."""
-        # Accept both GOOGLE_API_KEY and GEMINI_API_KEY for flexibility
-        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-        
-        if not api_key:
-            raise ConfigurationError(
-                "Missing GOOGLE_API_KEY or GEMINI_API_KEY environment variable",
-                missing_keys=["GOOGLE_API_KEY", "GEMINI_API_KEY"]
-            )
-        
-        # Initialize the new genai client
-        self._client = genai.Client(api_key=api_key)
+        """Initialize Gemini client using Settings."""
+        # Initialize the genai client with settings
+        self._client = genai.Client(api_key=settings.google_api_key)
         self._system_prompt = load_system_prompt()
         
         logger.info(f"GeminiService initialized with model: {self.DEFAULT_MODEL}")
+    
+    # Configuration properties from Settings
+    @property
+    def DEFAULT_MODEL(self) -> str:
+        return settings.gemini_model
+    
+    @property
+    def EMBEDDING_MODEL(self) -> str:
+        return settings.embedding_model
     
     @property
     def client(self) -> genai.Client:

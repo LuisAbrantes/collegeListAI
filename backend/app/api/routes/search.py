@@ -53,12 +53,55 @@ class SearchResponse(BaseModel):
 
 
 class RecommendRequest(BaseModel):
-    """Request for AI recommendations."""
+    """
+    Request for AI recommendations with full student profile.
+    
+    Uses LangGraph agent workflow with automatic International vs Domestic routing.
+    """
     query: str = Field(..., min_length=1, max_length=2000)
-    nationality: str = Field(..., min_length=2, max_length=100)
+    
+    # Core identification
+    citizenship_status: Optional[str] = Field(None, description="US_CITIZEN, PERMANENT_RESIDENT, INTERNATIONAL, DACA")
+    nationality: Optional[str] = Field(None, min_length=2, max_length=100)
+    
+    # Academic metrics
     gpa: float = Field(..., ge=0.0, le=4.0)
     major: str = Field(..., min_length=2, max_length=100)
+    minor: Optional[str] = Field(None, min_length=2, max_length=100)  # NEW: Minor field
+    sat_score: Optional[int] = Field(None, ge=400, le=1600)
+    act_score: Optional[int] = Field(None, ge=1, le=36)
+    
+    # US-specific fields
+    state_of_residence: Optional[str] = Field(None, max_length=50)
+    
+    # Financial info
+    household_income_tier: Optional[str] = Field(None, description="LOW, MEDIUM, HIGH")
+    
+    # International-specific
+    english_proficiency_score: Optional[int] = Field(None, ge=0, le=160, description="TOEFL (120 max), IELTS (9 max), Duolingo (160 max)")
+    english_test_type: Optional[str] = Field(None, description="TOEFL, IELTS, DUOLINGO")
+    
+    # Fit factors
+    campus_vibe: Optional[str] = Field(None, description="URBAN, SUBURBAN, RURAL")
+    is_student_athlete: bool = Field(False)
+    has_legacy_status: bool = Field(False)
+    legacy_universities: Optional[List[str]] = None
+    post_grad_goal: Optional[str] = Field(None, description="JOB_PLACEMENT, GRADUATE_SCHOOL, ENTREPRENEURSHIP, UNDECIDED")
+    is_first_gen: bool = Field(False)
+    ap_class_count: Optional[int] = Field(None, ge=0, le=20)
+    ap_classes: Optional[List[str]] = None
+    
+    # Exclusions
     excluded_colleges: Optional[List[str]] = None
+    
+    # Chat persistence
+    thread_id: Optional[str] = Field(None, description="Chat thread ID for persistence")
+    
+    # NEW: Conversation history for context
+    conversation_history: Optional[List[dict]] = Field(
+        None, 
+        description="Previous messages in format [{'role': 'user'|'assistant', 'content': '...'}]"
+    )
 
 
 class ExclusionRequest(BaseModel):
@@ -143,77 +186,126 @@ async def search_colleges(
 
 
 # ============================================================================
-# Recommendation Endpoints
+# Recommendation Endpoints (LangGraph Agent)
 # ============================================================================
 
 @router.post("/recommend")
 async def get_recommendations(
     request: RecommendRequest,
-    vector_service: VectorService = Depends(get_vector_service),
-    gemini_service: GeminiService = Depends(get_gemini_service)
 ):
     """
-    Get AI-powered college recommendations.
+    Get AI-powered college recommendations using LangGraph agent.
     
-    1. Searches for similar colleges using vector similarity
-    2. Passes results to Gemini for personalized recommendations
-    3. Returns recommendations with Reach/Target/Safety labels
+    Features:
+    - Automatic International vs Domestic routing
+    - Google Search grounding for real-time data
+    - Financial aid context based on student type
+    
+    Returns complete recommendations (non-streaming).
     """
+    from app.agents.graph import generate_recommendations
+    from app.agents.state import StudentProfile
+    
     try:
-        # First, get similar colleges from vector search
-        similar_colleges = await vector_service.search_similar_colleges(
-            query_text=request.query,
-            threshold=0.6,
-            limit=20,
-            exclude_ids=None,
-        )
+        profile: StudentProfile = {
+            "citizenship_status": request.citizenship_status,
+            "nationality": request.nationality,
+            "gpa": request.gpa,
+            "major": request.major,
+            "minor": request.minor,  # NEW
+            "sat_score": request.sat_score,
+            "act_score": request.act_score,
+            "state_of_residence": request.state_of_residence,
+            "household_income_tier": request.household_income_tier,
+            "english_proficiency_score": request.english_proficiency_score,
+            "english_test_type": request.english_test_type,
+            "campus_vibe": request.campus_vibe,
+            "is_student_athlete": request.is_student_athlete,
+            "has_legacy_status": request.has_legacy_status,
+            "legacy_universities": request.legacy_universities,
+            "post_grad_goal": request.post_grad_goal,
+            "is_first_gen": request.is_first_gen,
+            "ap_class_count": request.ap_class_count,
+            "ap_classes": request.ap_classes,
+        }
         
-        # Convert to dict format for Gemini
-        colleges_data = [
-            {
-                "name": c.name,
-                "metadata": c.metadata.model_dump() if c.metadata else {},
-                "similarity": c.similarity,
-            }
-            for c in similar_colleges
-        ]
-        
-        # Get AI recommendations
-        response = await gemini_service.generate_recommendations_with_search(
+        # Run agent workflow with conversation history
+        result = await generate_recommendations(
             user_query=request.query,
-            nationality=request.nationality,
-            gpa=request.gpa,
-            major=request.major,
+            profile=profile,
             excluded_colleges=request.excluded_colleges,
-            cached_colleges=colleges_data,
+            conversation_history=request.conversation_history,  # NEW
         )
         
-        return response
+        # Extract content from result
+        return {
+            "content": "".join(result.get("stream_content", [])),
+            "student_type": result.get("student_type"),
+            "search_queries": result.get("search_queries", []),
+            "sources": result.get("grounding_sources", []),
+        }
         
     except RateLimitError as e:
         raise HTTPException(status_code=429, detail=str(e))
-    except (VectorServiceError, AIServiceError) as e:
+    except AIServiceError as e:
         raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/recommend/debug")
+async def debug_request(request_data: dict):
+    """Debug endpoint to see raw request body."""
+    import logging
+    logging.info(f"DEBUG REQUEST BODY: {request_data}")
+    return {"received": request_data}
 
 
 @router.post("/recommend/stream")
 async def stream_recommendations(
     request: RecommendRequest,
-    gemini_service: GeminiService = Depends(get_gemini_service)
 ):
     """
     Stream AI recommendations via Server-Sent Events (SSE).
     
-    Provides real-time streaming of the AI response for better UX.
+    Uses LangGraph agent workflow with:
+    - Automatic International vs Domestic routing
+    - Google Search grounding for real-time data
+    - Financial aid context based on student type
     """
+    from app.agents.graph import stream_recommendations as agent_stream
+    from app.agents.state import StudentProfile
+    
     async def event_generator():
         try:
-            async for chunk in gemini_service.stream_recommendations(
+            profile: StudentProfile = {
+                "citizenship_status": request.citizenship_status,
+                "nationality": request.nationality,
+                "gpa": request.gpa,
+                "major": request.major,
+                "minor": request.minor,  # NEW
+                "sat_score": request.sat_score,
+                "act_score": request.act_score,
+                "state_of_residence": request.state_of_residence,
+                "household_income_tier": request.household_income_tier,
+                "english_proficiency_score": request.english_proficiency_score,
+                "english_test_type": request.english_test_type,
+                "campus_vibe": request.campus_vibe,
+                "is_student_athlete": request.is_student_athlete,
+                "has_legacy_status": request.has_legacy_status,
+                "legacy_universities": request.legacy_universities,
+                "post_grad_goal": request.post_grad_goal,
+                "is_first_gen": request.is_first_gen,
+                "ap_class_count": request.ap_class_count,
+                "ap_classes": request.ap_classes,
+            }
+            
+            # Stream from agent with conversation history
+            async for chunk in agent_stream(
                 user_query=request.query,
-                nationality=request.nationality,
-                gpa=request.gpa,
-                major=request.major,
+                profile=profile,
                 excluded_colleges=request.excluded_colleges,
+                conversation_history=request.conversation_history,  # NEW
             ):
                 yield {
                     "event": "chunk",
@@ -234,6 +326,11 @@ async def stream_recommendations(
             yield {
                 "event": "error",
                 "data": json.dumps({"error": "ai_error", "message": str(e)}),
+            }
+        except Exception as e:
+            yield {
+                "event": "error",
+                "data": json.dumps({"error": "unknown", "message": str(e)}),
             }
     
     return EventSourceResponse(event_generator())

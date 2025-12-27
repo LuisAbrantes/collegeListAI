@@ -42,6 +42,7 @@ export function Profile({ currentProfile }: ProfileProps) {
   
   const [formData, setFormData] = useState<UserProfileUpdate>({
     citizenshipStatus: currentProfile.citizenshipStatus,
+    name: currentProfile.name || '',
     nationality: currentProfile.nationality || '',
     gpa: currentProfile.gpa,
     major: currentProfile.major,
@@ -117,6 +118,21 @@ export function Profile({ currentProfile }: ProfileProps) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2 md:col-span-2">
+                <label htmlFor="name" className={labelClass}>
+                  Name
+                </label>
+                <input
+                  id="name"
+                  type="text"
+                  value={formData.name || ''}
+                  onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  className={inputClass}
+                  placeholder="e.g., John Smith"
+                />
+                <p className={helperClass}>Your name for personalized greetings (never shared with AI).</p>
+              </div>
+
               <div className="space-y-2">
                 <label htmlFor="citizenshipStatus" className={labelClass}>
                   Citizenship Status *
