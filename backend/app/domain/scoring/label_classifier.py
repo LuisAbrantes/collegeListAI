@@ -2,12 +2,14 @@
 Label Classifier
 
 Classifies universities as Reach, Target, or Safety.
-Uses strict criteria based on acceptance rates and student stats.
+Uses acceptance rates and student stats.
 
-REFACTORED: New classification rules:
-- Safety: Student's GPA/SAT in TOP 25% of school's range AND acceptance rate > 35%
-- Reach: Acceptance rate < 15% OR student in BOTTOM 25% of stats
-- Target: Everything else
+CLASSIFICATION RULES:
+- Reach: Acceptance rate < 20% (CMU, Michigan, Harvard...)
+- Target: Acceptance rate 20-50%
+- Safety: Acceptance rate > 50%
+
+Student stats also affect classification (can bump up/down one tier).
 """
 
 from app.domain.scoring.interfaces import (
@@ -19,17 +21,18 @@ from app.domain.scoring.interfaces import (
 
 class LabelClassifier:
     """
-    University label classifier with refined probability formula.
+    University label classifier.
     
-    New Classification Criteria:
-    - REACH: Acceptance Rate < 15% OR student stats below 25th percentile
-    - TARGET: Stats between 25th-75th percentile OR moderate acceptance rates
-    - SAFETY: Stats above 75th percentile AND Acceptance Rate > 35%
+    Classification Criteria:
+    - REACH: Acceptance Rate < 20% OR student stats below 25th percentile
+    - TARGET: Acceptance Rate 20-50% with reasonable stats
+    - SAFETY: Acceptance Rate > 50% OR stats above 75th percentile
     """
     
     # Acceptance rate thresholds
-    REACH_ACCEPTANCE_THRESHOLD = 0.15  # Below 15% = Reach
-    SAFETY_ACCEPTANCE_THRESHOLD = 0.35  # Above 35% + high stats = Safety
+    REACH_ACCEPTANCE_THRESHOLD = 0.20    # Below 20% = Reach (CMU, Michigan, etc)
+    TARGET_ACCEPTANCE_THRESHOLD = 0.50   # 20-50% = Target
+    # Above 50% = Safety
     
     def classify(
         self,
@@ -46,29 +49,24 @@ class LabelClassifier:
         acceptance_rate = university.acceptance_rate
         percentile = self._get_percentile_position(context, university)
         
-        # Rule 1: Very low acceptance rate = Reach (even for strong candidates)
+        # Rule 1: Very low acceptance rate (<20%) = Reach
         if acceptance_rate is not None and acceptance_rate < self.REACH_ACCEPTANCE_THRESHOLD:
             return AdmissionLabel.REACH
         
-        # Rule 2: Student in bottom 25% of stats = Reach
+        # Rule 2: Student in bottom 25% of stats = Reach (even at easier schools)
         if percentile is not None and percentile < 25:
             return AdmissionLabel.REACH
         
-        # Rule 3: Student in top 25% AND acceptance > 35% = Safety
-        if percentile is not None and percentile >= 75:
-            if acceptance_rate is None or acceptance_rate > self.SAFETY_ACCEPTANCE_THRESHOLD:
-                return AdmissionLabel.SAFETY
-        
-        # Rule 4: High acceptance rate (>50%) with decent stats (>=40th percentile) = Safety
-        if acceptance_rate is not None and acceptance_rate > 0.50:
-            if percentile is None or percentile >= 40:
-                return AdmissionLabel.SAFETY
-        
-        # Rule 5: Very high acceptance rate (>65%) = Safety regardless of stats
-        if acceptance_rate is not None and acceptance_rate > 0.65:
+        # Rule 3: High acceptance rate (>50%) = Safety
+        if acceptance_rate is not None and acceptance_rate > self.TARGET_ACCEPTANCE_THRESHOLD:
             return AdmissionLabel.SAFETY
         
-        # Default: Target
+        # Rule 4: Student in top 25% with moderate acceptance = Safety
+        if percentile is not None and percentile >= 75:
+            if acceptance_rate is None or acceptance_rate >= 0.30:
+                return AdmissionLabel.SAFETY
+        
+        # Default: Target (20-50% acceptance with reasonable stats)
         return AdmissionLabel.TARGET
     
     def calculate_admission_probability(

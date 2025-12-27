@@ -17,11 +17,14 @@ from enum import Enum
 
 
 class QueryIntent(str, Enum):
-    """User query intent classification."""
+    """
+    User query intent classification.
+    
+    NOTE: Profile updates are done via Settings UI only, not chat.
+    """
     GENERATE_LIST = "generate_list"     # "Generate recommendations for me"
     CLARIFY_QUESTION = "clarify"        # "Which major are you considering?"
-    UPDATE_PROFILE = "update_profile"   # "My major is economics"
-    FOLLOW_UP = "follow_up"             # "Tell me more about MIT"
+    FOLLOW_UP = "follow_up"             # "Tell me more about MIT", "Change those"
     GENERAL_CHAT = "general_chat"       # "Hello", "Thanks"
 
 

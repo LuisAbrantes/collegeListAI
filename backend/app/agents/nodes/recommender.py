@@ -145,14 +145,6 @@ async def recommender_node(state: RecommendationAgentState) -> Dict[str, Any]:
         
         logger.info(f"Recommender: Handling intent {query_intent.value} for query: '{user_query[:50]}...'")
         
-        # === HANDLE UPDATE_PROFILE INTENT ===
-        if query_intent == QueryIntent.UPDATE_PROFILE:
-            update_response = _build_update_response(derived_major, derived_minor, effective_major, effective_minor)
-            return {
-                "stream_content": [update_response],
-                "recommendations": [],
-            }
-        
         # === HANDLE CLARIFY_QUESTION INTENT ===
         if query_intent == QueryIntent.CLARIFY_QUESTION:
             clarify_response = await _generate_clarify_response(

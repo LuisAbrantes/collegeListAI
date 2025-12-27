@@ -63,15 +63,14 @@ CLARIFY_KEYWORDS = [
     "explain", "tell me about", "can you",
 ]
 
-UPDATE_KEYWORDS = [
-    "major is", "minor is", "gpa is", "my score", "i have",
-    "actually", "change", "update", "correct",
-]
-
 FOLLOW_UP_KEYWORDS = [
+    # About specific schools
     "more about", "tell me more", "what about", "how about",
     "specifically", "detail", "scholarship", "financial aid",
     "cost", "tuition", "chances",
+    # List modification requests
+    "change", "replace", "swap", "remove", "add another", "different",
+    "instead", "not that", "wrong", "actually",
 ]
 
 
@@ -110,20 +109,16 @@ def _classify_intent(query: str, has_history: bool) -> QueryIntent:
     Classify user query intent.
     
     Priority:
-    1. UPDATE_PROFILE - User is providing new information
-    2. FOLLOW_UP - User is asking about previous recommendations
-    3. CLARIFY_QUESTION - User is asking a question (not about recs)
-    4. GENERATE_LIST - User wants recommendations
-    5. GENERAL_CHAT - Default fallback
+    1. FOLLOW_UP - User wants to modify previous list or ask about recs (needs history)
+    2. GENERATE_LIST - User wants new recommendations
+    3. CLARIFY_QUESTION - User is asking a question
+    4. GENERAL_CHAT - Default fallback
+    
+    NOTE: Profile updates are done via Settings UI only, not chat.
     """
     query_lower = query.lower()
     
-    # Check for profile updates (highest priority - user is correcting/adding info)
-    for keyword in UPDATE_KEYWORDS:
-        if keyword in query_lower:
-            return QueryIntent.UPDATE_PROFILE
-    
-    # Check for follow-up questions (needs context from history)
+    # Check for follow-up/modification requests (highest priority if has history)
     if has_history:
         for keyword in FOLLOW_UP_KEYWORDS:
             if keyword in query_lower:
@@ -260,12 +255,11 @@ def should_skip_research(state: RecommendationAgentState) -> str:
     
     Skip research for:
     - CLARIFY_QUESTION: Just answer the question
-    - UPDATE_PROFILE: Just acknowledge the update
     - GENERAL_CHAT: Just respond conversationally
     """
     intent = state.get("query_intent", QueryIntent.GENERATE_LIST)
     
-    if intent in [QueryIntent.CLARIFY_QUESTION, QueryIntent.UPDATE_PROFILE, QueryIntent.GENERAL_CHAT]:
+    if intent in [QueryIntent.CLARIFY_QUESTION, QueryIntent.GENERAL_CHAT]:
         logger.info(f"Router: Skipping research for intent {intent.value}")
         return "skip_to_recommender"
     
@@ -398,3 +392,45 @@ async def stream_recommendations(
             
             if update.get("error"):
                 logger.error(f"Node {node_name} error: {update['error']}")
+
+
+# =============================================================================
+# New Agent-Based API (Function Calling)
+# =============================================================================
+
+async def generate_with_agent(
+    user_query: str,
+    profile: StudentProfile,
+    excluded_colleges: list[str] | None = None,
+    conversation_history: list[ChatMessage] | None = None,
+) -> Dict[str, Any]:
+    """
+    Generate recommendations using the new tool-based agent.
+    
+    This uses function calling instead of rigid intent classification.
+    The LLM decides which tools to use based on the query.
+    
+    Args:
+        user_query: User's natural language query
+        profile: Student profile data
+        excluded_colleges: Colleges to exclude
+        conversation_history: Previous messages
+        
+    Returns:
+        Dict with stream_content and recommendations
+    """
+    from app.agents.nodes.agent_node import agent_node
+    
+    # Create state
+    state = create_initial_state(
+        user_query=user_query,
+        profile=profile,
+        excluded_colleges=excluded_colleges,
+        conversation_history=conversation_history,
+    )
+    
+    # Run agent directly (no graph needed - single node)
+    result = await agent_node(state)
+    
+    return result
+
