@@ -268,12 +268,12 @@ async def stream_recommendations(
     """
     Stream AI recommendations via Server-Sent Events (SSE).
     
-    Uses LangGraph agent workflow with:
-    - Automatic International vs Domestic routing
-    - Google Search grounding for real-time data
-    - Financial aid context based on student type
+    Uses new tool-based agent with function calling:
+    - LLM decides which tool to use (search_colleges, get_college_info, etc.)
+    - More natural and intelligent responses
+    - Proper handling of "tell me about X" vs "give me a list"
     """
-    from app.agents.graph import stream_recommendations as agent_stream
+    from app.agents.graph import generate_with_agent
     from app.agents.state import StudentProfile
     
     async def event_generator():
@@ -283,7 +283,7 @@ async def stream_recommendations(
                 "nationality": request.nationality,
                 "gpa": request.gpa,
                 "major": request.major,
-                "minor": request.minor,  # NEW
+                "minor": request.minor,
                 "sat_score": request.sat_score,
                 "act_score": request.act_score,
                 "state_of_residence": request.state_of_residence,
@@ -300,13 +300,17 @@ async def stream_recommendations(
                 "ap_classes": request.ap_classes,
             }
             
-            # Stream from agent with conversation history
-            async for chunk in agent_stream(
+            # Use new tool-based agent
+            result = await generate_with_agent(
                 user_query=request.query,
                 profile=profile,
                 excluded_colleges=request.excluded_colleges,
-                conversation_history=request.conversation_history,  # NEW
-            ):
+                conversation_history=request.conversation_history,
+            )
+            
+            # Stream the response content
+            content = result.get("stream_content", [])
+            for chunk in content:
                 yield {
                     "event": "chunk",
                     "data": json.dumps({"text": chunk}),

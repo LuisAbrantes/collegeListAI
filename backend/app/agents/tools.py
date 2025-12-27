@@ -145,7 +145,7 @@ class ToolExecutor:
             return await self._search_colleges(arguments, student_profile, student_type)
         
         elif tool_name == "get_college_info":
-            return await self._get_college_info(arguments)
+            return await self._get_college_info(arguments, student_profile)
         
         elif tool_name == "get_student_profile":
             return self._get_student_profile(student_profile)
@@ -241,18 +241,23 @@ class ToolExecutor:
             "colleges": colleges
         }
     
-    async def _get_college_info(self, args: Dict[str, Any]) -> Dict[str, Any]:
+    async def _get_college_info(
+        self,
+        args: Dict[str, Any],
+        profile: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
-        Get details about a specific college.
+        Get DETAILED information about a specific college.
         
-        Wraps: CollegeRepository.get_by_name
+        Returns institutional data + major-specific stats if available.
         """
         name = args.get("name", "")
+        major = profile.get("major", "Computer Science")
         
         if not name:
             return {"error": "College name is required"}
         
-        # Search for college in cache
+        # Try exact match first
         college = await self.college_repo.get_by_name(name)
         
         if not college:
@@ -264,23 +269,44 @@ class ToolExecutor:
         if not college:
             return {
                 "found": False,
-                "message": f"No information found for '{name}'. Try using search_colleges to get fresh data."
+                "name": name,
+                "message": f"'{name}' is not in our database yet. You could ask for a new college list to discover this school."
             }
         
-        return {
+        # Get major-specific stats if available
+        from app.infrastructure.db.repositories.college_repository import CollegeMajorStatsRepository
+        
+        # Build response with available data
+        result = {
             "found": True,
             "name": college.name,
-            "acceptance_rate": college.acceptance_rate,
-            "median_gpa": college.median_gpa,
+            "campus_setting": college.campus_setting,
+            "state": college.state,
             "tuition_in_state": college.tuition_in_state,
             "tuition_out_of_state": college.tuition_out_of_state,
             "tuition_international": college.tuition_international,
-            "campus_setting": college.campus_setting,
-            "state": college.state,
             "need_blind_domestic": college.need_blind_domestic,
             "need_blind_international": college.need_blind_international,
             "meets_full_need": college.meets_full_need,
         }
+        
+        # Try to get major-specific stats
+        try:
+            college_with_stats = await self.college_repo.get_with_stats_by_name(
+                college.name, major
+            )
+            if college_with_stats:
+                result["major"] = major
+                result["acceptance_rate"] = college_with_stats.acceptance_rate
+                result["median_gpa"] = college_with_stats.median_gpa
+                result["sat_25th"] = college_with_stats.sat_25th
+                result["sat_75th"] = college_with_stats.sat_75th
+                result["major_strength"] = college_with_stats.major_strength
+        except Exception:
+            # Major stats not available, still return institutional data
+            pass
+        
+        return result
     
     def _get_student_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
         """

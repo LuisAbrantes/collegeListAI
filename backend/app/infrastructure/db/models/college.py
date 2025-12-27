@@ -36,6 +36,28 @@ class CollegeBase(SQLModel):
         description="URBAN, SUBURBAN, RURAL"
     )
     
+    # Tuition fields
+    tuition_in_state: Optional[float] = Field(
+        default=None,
+        description="Annual in-state tuition in USD"
+    )
+    
+    tuition_out_of_state: Optional[float] = Field(
+        default=None,
+        description="Annual out-of-state tuition in USD"
+    )
+    
+    tuition_international: Optional[float] = Field(
+        default=None,
+        description="Annual international student tuition in USD"
+    )
+    
+    # Financial aid policies
+    need_blind_domestic: bool = Field(
+        default=True,
+        description="Whether need-blind for domestic students"
+    )
+    
     need_blind_international: bool = Field(
         default=False,
         description="Whether need-blind for international students"
@@ -45,6 +67,14 @@ class CollegeBase(SQLModel):
         default=False,
         description="Whether meets 100% demonstrated need"
     )
+    
+    # Location
+    state: Optional[str] = Field(
+        default=None,
+        max_length=50,
+        description="US state where main campus is located"
+    )
+
 
 
 class CollegeMajorStatsBase(SQLModel):

@@ -117,7 +117,12 @@ class CollegeSearchService:
         force_refresh: bool = False
     ) -> List[UniversityData]:
         """
-        Execute hybrid search: cache-first, then web discovery.
+        Execute hybrid search: cache-first, then ALWAYS discover new.
+        
+        DATA GROWTH STRATEGY:
+        - Even with full cache, discover 3-5 NEW universities
+        - Merge cached + discovered (deduplicated)
+        - Ensures database keeps growing over time
         
         Args:
             major: Student's intended major
@@ -164,34 +169,49 @@ class CollegeSearchService:
         
         logger.info(f"Found {fresh_count} fresh colleges for '{major}' in cache")
         
-        # Convert cached colleges (already JOINed) to UniversityData
+        # Get cached university names for exclusion
+        cached_names = set()
         for college_with_stats in cached_colleges:
-            universities.append(self._joined_to_university_data(college_with_stats))
+            uni_data = self._joined_to_university_data(college_with_stats)
+            universities.append(uni_data)
+            cached_names.add(uni_data.name.lower())
         
-        # Phase 2: Discovery - only if cache is insufficient
-        if fresh_count < MIN_CACHE_THRESHOLD:
-            logger.info(f"Phase 2: Cache below threshold ({fresh_count} < {MIN_CACHE_THRESHOLD}), triggering hybrid discovery...")
+        # Phase 2: ALWAYS discover new universities (incremental growth)
+        # Even with full cache, try to find 3-5 NEW universities
+        should_discover = fresh_count < MIN_CACHE_THRESHOLD or fresh_count < 50  # Always grow until 50+
+        
+        if should_discover:
+            logger.info(f"Phase 2: Discovering new universities for '{major}' (current: {fresh_count})...")
             
             try:
                 web_results = await self._discover_with_hybrid_pipeline(major, profile, student_type)
                 
-                # Phase 3: Auto-populate cache with relational upsert
-                logger.info(f"Phase 3: Auto-populating cache with {len(web_results)} discoveries...")
-                for uni_data in web_results:
-                    await self._save_to_cache_relational(uni_data, major)
-                    universities.append(uni_data)
+                # Filter to only NEW universities (not in cache)
+                new_universities = [
+                    uni for uni in web_results 
+                    if uni.name.lower() not in cached_names
+                ]
+                
+                if new_universities:
+                    logger.info(f"Phase 3: Found {len(new_universities)} NEW universities to add to cache!")
+                    for uni_data in new_universities:
+                        await self._save_to_cache_relational(uni_data, major)
+                        universities.append(uni_data)
+                else:
+                    logger.info("No new universities found (all already in cache)")
                 
             except Exception as e:
-                logger.warning(f"Hybrid discovery failed: {e}. Using cache only.")
+                logger.warning(f"Incremental discovery failed: {e}. Using cache only.")
         else:
-            logger.info("Cache sufficient, skipping web discovery")
+            logger.info(f"Cache mature ({fresh_count} universities), skipping discovery")
         
-        # Deduplicate by name
+        # Deduplicate by name (case-insensitive)
         seen = set()
         unique = []
         for uni in universities:
-            if uni.name not in seen:
-                seen.add(uni.name)
+            name_lower = uni.name.lower()
+            if name_lower not in seen:
+                seen.add(name_lower)
                 unique.append(uni)
         
         logger.info(f"Phase 4: Returning {len(unique)} universities for scoring")

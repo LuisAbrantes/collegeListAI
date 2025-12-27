@@ -393,3 +393,67 @@ class CollegeMajorStatsRepository(
                 data_source=data.data_source,
             )
             return await self.create(stats_data)
+    
+    async def get_stale_stats(self, limit: int = 50) -> List[CollegeWithMajorStats]:
+        """
+        Get colleges with STALE stats (oldest updated_at first).
+        
+        Used by background refresh job to update old data.
+        Returns JOINed data for easy access to college name.
+        """
+        threshold = datetime.utcnow() - timedelta(days=STALENESS_DAYS)
+        
+        stmt = (
+            select(
+                College.id,
+                College.name,
+                College.campus_setting,
+                College.tuition_in_state,
+                College.tuition_out_of_state,
+                College.tuition_international,
+                College.need_blind_domestic,
+                College.need_blind_international,
+                College.meets_full_need,
+                College.state,
+                CollegeMajorStats.major_name,
+                CollegeMajorStats.acceptance_rate,
+                CollegeMajorStats.median_gpa,
+                CollegeMajorStats.sat_25th,
+                CollegeMajorStats.sat_75th,
+                CollegeMajorStats.major_strength,
+                CollegeMajorStats.data_source,
+                CollegeMajorStats.updated_at,
+            )
+            .join(CollegeMajorStats, College.id == CollegeMajorStats.college_id)
+            .where(CollegeMajorStats.updated_at < threshold)
+            .order_by(CollegeMajorStats.updated_at.asc())  # Oldest first
+            .limit(limit)
+        )
+        
+        result = await self.session.execute(stmt)
+        rows = result.all()
+        
+        return [
+            CollegeWithMajorStats(
+                id=row.id,
+                name=row.name,
+                campus_setting=row.campus_setting,
+                tuition_in_state=row.tuition_in_state,
+                tuition_out_of_state=row.tuition_out_of_state,
+                tuition_international=row.tuition_international,
+                need_blind_domestic=row.need_blind_domestic,
+                need_blind_international=row.need_blind_international,
+                meets_full_need=row.meets_full_need,
+                state=row.state,
+                major_name=row.major_name,
+                acceptance_rate=row.acceptance_rate,
+                median_gpa=row.median_gpa,
+                sat_25th=row.sat_25th,
+                sat_75th=row.sat_75th,
+                major_strength=row.major_strength,
+                data_source=row.data_source,
+                updated_at=row.updated_at,
+            )
+            for row in rows
+        ]
+
