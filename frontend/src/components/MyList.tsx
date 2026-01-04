@@ -162,7 +162,7 @@ export function MyList({ className = '' }: MyListProps) {
     <div className={`max-w-4xl mx-auto px-4 py-8 ${className}`}>
       {/* Header */}
       <div className="flex items-center gap-3 mb-8">
-        <ListChecks className="w-8 h-8 text-blue-400" />
+        <ListChecks className="w-8 h-8 text-zinc-400" />
         <div>
           <h1 className="text-2xl font-bold text-zinc-100">My College List</h1>
           <p className="text-sm text-zinc-400">

@@ -292,7 +292,7 @@ class ToolExecutor:
         # Step 2: Build student context for scoring
         context = StudentContext(
             is_domestic=student_type == "domestic",
-            citizenship_status=profile.get("citizenship_status", "international"),
+            citizenship_status=profile.get("citizenship_status", "domestic" if student_type == "domestic" else "international"),
             nationality=profile.get("nationality"),
             state_of_residence=profile.get("state_of_residence"),
             gpa=profile.get("gpa", 3.5),

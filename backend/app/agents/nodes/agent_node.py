@@ -69,13 +69,13 @@ When presenting college recommendations, YOU MUST include metrics for EACH schoo
 - Match Score (e.g., "78% match")
 - Acceptance Rate (e.g., "18% acceptance rate")
 - Academic Info (SAT range, median GPA if available)
-- Financial Aid (need-blind status if relevant)
+- Financial Aid info (if relevant to the student's profile)
 
 Example format for each school:
 **MIT** - 🎯 Reach (72% match)
 - Acceptance Rate: 4%
 - SAT Range: 1520-1580
-- Need-Blind for Internationals: Yes
+- Financial Aid: Need-blind admissions
 
 DO NOT just list school names without metrics. The metrics are critical for decision-making.
 
@@ -95,7 +95,7 @@ async def agent_node(state: RecommendationAgentState) -> Dict[str, Any]:
     try:
         user_query = state.get("user_query", "")
         profile = state.get("profile", {})
-        student_type = state.get("student_type", "international")
+        student_type = state.get("student_type", "domestic")
         conversation_history = state.get("conversation_history", [])
         
         logger.info(f"[AGENT] Processing query: '{user_query[:50]}...'")

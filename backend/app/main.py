@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="College List AI",
-    description="AI-powered college advisor for international students",
+    description="AI-powered college advisor for building your strategic college list",
     version="1.0.0",
     lifespan=lifespan,
     debug=settings.debug,

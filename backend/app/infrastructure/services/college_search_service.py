@@ -310,8 +310,8 @@ class CollegeSearchService:
         Includes retry logic for 429 rate limits.
         """
         gpa = profile.get("gpa", 3.5)
-        nationality = profile.get("nationality", "international")
         is_domestic = student_type == "domestic"
+        nationality = profile.get("nationality", "US" if is_domestic else "Unknown")
         
         prompt = f"""Research the LATEST college admission statistics for {major} programs.
 
@@ -399,8 +399,8 @@ Use the most recent 2024/2025 admission data available."""
             return None
         
         gpa = profile.get("gpa", 3.5)
-        nationality = profile.get("nationality", "international")
         is_domestic = student_type == "domestic"
+        nationality = profile.get("nationality", "US" if is_domestic else "Unknown")
         
         # Prompt for RAW TEXT output (NOT JSON)
         prompt = f"""Research the LATEST college admission statistics for {major} programs.
@@ -712,8 +712,8 @@ Return ONLY the valid JSON object."""
         Used when Gemini is completely unavailable.
         """
         gpa = profile.get("gpa", 3.5)
-        nationality = profile.get("nationality", "international")
         is_domestic = student_type == "domestic"
+        nationality = profile.get("nationality", "US" if is_domestic else "Unknown")
         
         prompt = f"""You are simulating an expert college admissions database.
 
