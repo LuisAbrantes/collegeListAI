@@ -1,9 +1,12 @@
 /**
  * CollegeCard Component - Minimalist "Trading Card" Style
+ * 
+ * Now includes Add to List and Exclude action buttons.
  */
 
 import type { CollegeLabel } from '../types/api';
 import { motion } from 'framer-motion';
+import { Plus, X, ExternalLink } from 'lucide-react';
 
 interface CollegeCardProps {
   name: string;
@@ -12,7 +15,9 @@ interface CollegeCardProps {
   reasoning?: string;
   financialAidInfo?: string;
   url?: string;
+  onAddToList?: (label: CollegeLabel) => void;
   onExclude?: () => void;
+  isInList?: boolean;
 }
 
 export function CollegeCard({
@@ -22,7 +27,9 @@ export function CollegeCard({
   reasoning,
   financialAidInfo,
   url,
+  onAddToList,
   onExclude,
+  isInList = false,
 }: CollegeCardProps) {
   
   // Map labels to Tailwind color classes
@@ -79,27 +86,50 @@ export function CollegeCard({
       </div>
 
       {/* Footer Actions */}
-      <div className="flex gap-4 mt-5 pt-4 border-t border-white/5">
+      <div className="flex gap-2 mt-5 pt-4 border-t border-white/5">
+        {/* Add to List Button */}
+        {onAddToList && !isInList && (
+          <button
+            onClick={() => onAddToList(label)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-lg transition-colors border-none cursor-pointer"
+          >
+            <Plus size={14} />
+            Add to List
+          </button>
+        )}
+        
+        {isInList && (
+          <span className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-500 bg-zinc-800/50 rounded-lg">
+            ✓ In Your List
+          </span>
+        )}
+
+        {/* Website Link */}
         {url && (
           <a
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm text-zinc-200 no-underline font-medium hover:text-white transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:text-white bg-zinc-800/50 hover:bg-zinc-700/50 rounded-lg transition-colors no-underline"
           >
-            Visit Website ↗
+            <ExternalLink size={14} />
+            Website
           </a>
         )}
         
+        {/* Exclude Button */}
         {onExclude && (
           <button
             onClick={onExclude}
-            className="ml-auto bg-none border-none text-sm text-zinc-500 cursor-pointer hover:text-zinc-300 transition-colors"
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors bg-transparent border-none cursor-pointer"
+            title="Never show this school again"
           >
-            Hide
+            <X size={14} />
+            Not Interested
           </button>
         )}
       </div>
     </motion.div>
   );
 }
+

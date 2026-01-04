@@ -15,6 +15,7 @@ import { AuthForm } from './components/AuthForm';
 import { ProfileForm } from './components/ProfileForm';
 import { Chat } from './components/Chat';
 import { Profile } from './components/Profile';
+import { MyList } from './components/MyList';
 import { Layout } from './components/Layout';
 
 function App() {
@@ -65,6 +66,7 @@ function App() {
           <Route element={<Layout userProfile={profile} onSignOut={signOut} />}>
             <Route path="/" element={<Chat profile={profile} />} />
             <Route path="/profile" element={<Profile currentProfile={profile} />} />
+            <Route path="/my-list" element={<MyList />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

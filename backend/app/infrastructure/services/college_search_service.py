@@ -68,6 +68,34 @@ class StructuredUniversityResponse(BaseModel):
     universities: List[UniversityExtraction] = Field(..., description="List of universities")
 
 
+# ============== Verified Need-Blind Schools (Hardcoded Source of Truth) ==============
+# These are the ONLY schools confirmed to be need-blind for international students
+# Source: https://www.collegetransitions.com/blog/need-blind-schools-international-students/
+VERIFIED_NEED_BLIND_INTERNATIONAL = frozenset([
+    "harvard",
+    "yale", 
+    "princeton",
+    "mit",
+    "massachusetts institute of technology",
+    "amherst college",
+    "amherst",
+    "dartmouth",
+    "dartmouth college",
+    "bowdoin",
+    "bowdoin college",
+])
+
+
+def is_verified_need_blind_international(university_name: str) -> bool:
+    """
+    Check if a university is verified need-blind for international students.
+    
+    Uses hardcoded list - MORE RELIABLE than LLM inference.
+    """
+    name_lower = university_name.lower().strip()
+    return any(verified in name_lower for verified in VERIFIED_NEED_BLIND_INTERNATIONAL)
+
+
 class CollegeSearchService:
     """
     Hybrid search service implementing the Data Flywheel.
@@ -463,8 +491,8 @@ IMPORTANT: Extract ALL universities mentioned and format them according to this 
       "sat_25th": 1400,
       "sat_75th": 1550,
       "major_strength_score": 8,
-      "need_blind_international": true,
-      "meets_full_need": true
+      "need_blind_international": false,
+      "meets_full_need": false
     }}
   ]
 }}
@@ -476,6 +504,12 @@ RULES:
 4. major_strength_score must be an integer from 1 to 10
 5. If data is missing, use reasonable estimates based on the university's selectivity
 6. campus_setting must be exactly "URBAN", "SUBURBAN", or "RURAL"
+
+CRITICAL - NEED-BLIND POLICY:
+- need_blind_international should be TRUE ONLY for these confirmed schools: Harvard, Yale, Princeton, MIT, Amherst, Dartmouth, Bowdoin
+- For ALL other schools, default to FALSE unless explicitly stated otherwise
+- Most public universities (like Penn State, UC schools, state universities) are NOT need-blind for international students
+- When in doubt, use FALSE
 
 Return ONLY the valid JSON object, nothing else."""
 
@@ -530,8 +564,8 @@ OUTPUT FORMAT (JSON):
       "sat_25th": 1400,
       "sat_75th": 1550,
       "major_strength_score": 8,
-      "need_blind_international": true,
-      "meets_full_need": true
+      "need_blind_international": false,
+      "meets_full_need": false
     }}
   ]
 }}
@@ -542,6 +576,11 @@ RULES:
 3. SAT scores must be between 400 and 1600 (use 0 if unknown)
 4. major_strength_score must be an integer from 1 to 10
 5. campus_setting must be exactly "URBAN", "SUBURBAN", or "RURAL"
+
+CRITICAL - NEED-BLIND POLICY:
+- need_blind_international = TRUE ONLY for: Harvard, Yale, Princeton, MIT, Amherst, Dartmouth, Bowdoin
+- ALL other schools (especially public universities like Penn State, UC schools) = FALSE
+- When in doubt, use FALSE
 
 Return ONLY the valid JSON object."""
 
@@ -761,14 +800,19 @@ Return ONLY valid JSON matching this exact schema:
                     sat_25 = validate_sat(uni.get("sat_25th"))
                     sat_75 = validate_sat(uni.get("sat_75th"))
                     
+                    uni_name = uni.get("name", "Unknown University")
+                    
+                    # OVERRIDE LLM value with verified list (more reliable)
+                    verified_need_blind = is_verified_need_blind_international(uni_name)
+                    
                     universities.append(UniversityData(
-                        name=uni.get("name", "Unknown University"),
+                        name=uni_name,
                         acceptance_rate=float(uni.get("acceptance_rate", 0.5)),
                         median_gpa=float(uni.get("median_gpa", 3.5)),
                         sat_25th=sat_25,
                         sat_75th=sat_75,
                         major_ranking=uni.get("major_strength_score"),
-                        need_blind_international=bool(uni.get("need_blind_international", False)),
+                        need_blind_international=verified_need_blind,  # Use verified, not LLM
                         data_source=data_source,
                         has_major=True,
                         student_major=major,

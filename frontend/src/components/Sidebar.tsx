@@ -5,7 +5,7 @@
  */
 
 import { Link, useLocation } from 'react-router-dom';
-import { MessageSquarePlus, User, LogOut, MessageSquare, Trash2, Clock } from 'lucide-react';
+import { MessageSquarePlus, User, LogOut, MessageSquare, Trash2, Clock, ListChecks } from 'lucide-react';
 import type { UserProfile } from '../types/api';
 import { useChatContext } from '../contexts/ChatContext';
 
@@ -54,6 +54,15 @@ export function Sidebar({ userProfile, onSignOut }: SidebarProps) {
           <MessageSquarePlus size={18} />
           New Chat
         </button>
+        <Link
+          to="/my-list"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors no-underline ${
+            isActive('/my-list') ? 'bg-white/10 text-white font-medium' : 'text-zinc-400 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <ListChecks size={18} />
+          My College List
+        </Link>
         <Link
           to="/profile"
           className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors no-underline ${
