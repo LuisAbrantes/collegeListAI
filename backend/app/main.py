@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="College List AI",
-    description="AI-powered college advisor for international students",
+    description="AI-powered college advisor for building your strategic college list",
     version="1.0.0",
     lifespan=lifespan,
     debug=settings.debug,
@@ -139,8 +139,10 @@ async def root():
 # Import and register routers
 # ============================================================================
 
-from app.api.routes import profiles, search, chats
+from app.api.routes import profiles, search, chats, college_list
 
 app.include_router(profiles.router, prefix="/api", tags=["Profiles"])
 app.include_router(search.router, prefix="/api", tags=["Search & Recommendations"])
 app.include_router(chats.router, prefix="/api", tags=["Chats"])
+app.include_router(college_list.router, tags=["College List"])
+

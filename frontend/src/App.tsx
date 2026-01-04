@@ -13,8 +13,10 @@ import { useProfile } from './hooks/useProfile';
 import { ChatProvider } from './contexts/ChatContext';
 import { AuthForm } from './components/AuthForm';
 import { ProfileForm } from './components/ProfileForm';
+import { Home } from './components/Home';
 import { Chat } from './components/Chat';
 import { Profile } from './components/Profile';
+import { MyList } from './components/MyList';
 import { Layout } from './components/Layout';
 
 function App() {
@@ -63,8 +65,10 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route element={<Layout userProfile={profile} onSignOut={signOut} />}>
-            <Route path="/" element={<Chat profile={profile} />} />
+            <Route path="/" element={<Home />} />
+            <Route path="/chat" element={<Chat profile={profile} />} />
             <Route path="/profile" element={<Profile currentProfile={profile} />} />
+            <Route path="/my-list" element={<MyList />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

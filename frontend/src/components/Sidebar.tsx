@@ -4,8 +4,8 @@
  * Vertical navigation with chat history and user profile.
  */
 
-import { Link, useLocation } from 'react-router-dom';
-import { MessageSquarePlus, User, LogOut, MessageSquare, Trash2, Clock } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { MessageSquarePlus, User, LogOut, MessageSquare, Trash2, Clock, ListChecks, Home } from 'lucide-react';
 import type { UserProfile } from '../types/api';
 import { useChatContext } from '../contexts/ChatContext';
 
@@ -16,6 +16,7 @@ interface SidebarProps {
 
 export function Sidebar({ userProfile, onSignOut }: SidebarProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const isActive = (path: string) => location.pathname === path;
   const isHome = location.pathname === '/';
 
@@ -36,6 +37,11 @@ export function Sidebar({ userProfile, onSignOut }: SidebarProps) {
     return date.toLocaleDateString();
   };
 
+  const handleNewChat = () => {
+    newChat();
+    navigate('/chat');
+  };
+
   return (
     <aside className="w-64 h-screen flex flex-col bg-zinc-950 border-r border-white/10 shrink-0">
       {/* App Header */}
@@ -45,15 +51,31 @@ export function Sidebar({ userProfile, onSignOut }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="px-3 space-y-1">
-        <button
-          onClick={newChat}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors bg-transparent border-none cursor-pointer text-left ${
-            isActive('/') && !threadId ? 'bg-white/10 text-white font-medium' : 'text-zinc-400 hover:text-white hover:bg-white/5'
+        <Link
+          to="/"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors no-underline ${
+            isHome ? 'bg-white/10 text-white font-medium' : 'text-zinc-400 hover:text-white hover:bg-white/5'
           }`}
+        >
+          <Home size={18} />
+          Home
+        </Link>
+        <button
+          onClick={handleNewChat}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors bg-transparent border-none cursor-pointer text-left text-zinc-400 hover:text-white hover:bg-white/5"
         >
           <MessageSquarePlus size={18} />
           New Chat
         </button>
+        <Link
+          to="/my-list"
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors no-underline ${
+            isActive('/my-list') ? 'bg-white/10 text-white font-medium' : 'text-zinc-400 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <ListChecks size={18} />
+          My College List
+        </Link>
         <Link
           to="/profile"
           className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors no-underline ${

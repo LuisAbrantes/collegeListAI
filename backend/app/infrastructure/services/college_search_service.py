@@ -68,6 +68,34 @@ class StructuredUniversityResponse(BaseModel):
     universities: List[UniversityExtraction] = Field(..., description="List of universities")
 
 
+# ============== Verified Need-Blind Schools (Hardcoded Source of Truth) ==============
+# These are the ONLY schools confirmed to be need-blind for international students
+# Source: https://www.collegetransitions.com/blog/need-blind-schools-international-students/
+VERIFIED_NEED_BLIND_INTERNATIONAL = frozenset([
+    "harvard",
+    "yale", 
+    "princeton",
+    "mit",
+    "massachusetts institute of technology",
+    "amherst college",
+    "amherst",
+    "dartmouth",
+    "dartmouth college",
+    "bowdoin",
+    "bowdoin college",
+])
+
+
+def is_verified_need_blind_international(university_name: str) -> bool:
+    """
+    Check if a university is verified need-blind for international students.
+    
+    Uses hardcoded list - MORE RELIABLE than LLM inference.
+    """
+    name_lower = university_name.lower().strip()
+    return any(verified in name_lower for verified in VERIFIED_NEED_BLIND_INTERNATIONAL)
+
+
 class CollegeSearchService:
     """
     Hybrid search service implementing the Data Flywheel.
@@ -117,7 +145,12 @@ class CollegeSearchService:
         force_refresh: bool = False
     ) -> List[UniversityData]:
         """
-        Execute hybrid search: cache-first, then web discovery.
+        Execute hybrid search: cache-first, then ALWAYS discover new.
+        
+        DATA GROWTH STRATEGY:
+        - Even with full cache, discover 3-5 NEW universities
+        - Merge cached + discovered (deduplicated)
+        - Ensures database keeps growing over time
         
         Args:
             major: Student's intended major
@@ -164,34 +197,49 @@ class CollegeSearchService:
         
         logger.info(f"Found {fresh_count} fresh colleges for '{major}' in cache")
         
-        # Convert cached colleges (already JOINed) to UniversityData
+        # Get cached university names for exclusion
+        cached_names = set()
         for college_with_stats in cached_colleges:
-            universities.append(self._joined_to_university_data(college_with_stats))
+            uni_data = self._joined_to_university_data(college_with_stats)
+            universities.append(uni_data)
+            cached_names.add(uni_data.name.lower())
         
-        # Phase 2: Discovery - only if cache is insufficient
-        if fresh_count < MIN_CACHE_THRESHOLD:
-            logger.info(f"Phase 2: Cache below threshold ({fresh_count} < {MIN_CACHE_THRESHOLD}), triggering hybrid discovery...")
+        # Phase 2: ALWAYS discover new universities (incremental growth)
+        # Even with full cache, try to find 3-5 NEW universities
+        should_discover = fresh_count < MIN_CACHE_THRESHOLD or fresh_count < 50  # Always grow until 50+
+        
+        if should_discover:
+            logger.info(f"Phase 2: Discovering new universities for '{major}' (current: {fresh_count})...")
             
             try:
                 web_results = await self._discover_with_hybrid_pipeline(major, profile, student_type)
                 
-                # Phase 3: Auto-populate cache with relational upsert
-                logger.info(f"Phase 3: Auto-populating cache with {len(web_results)} discoveries...")
-                for uni_data in web_results:
-                    await self._save_to_cache_relational(uni_data, major)
-                    universities.append(uni_data)
+                # Filter to only NEW universities (not in cache)
+                new_universities = [
+                    uni for uni in web_results 
+                    if uni.name.lower() not in cached_names
+                ]
+                
+                if new_universities:
+                    logger.info(f"Phase 3: Found {len(new_universities)} NEW universities to add to cache!")
+                    for uni_data in new_universities:
+                        await self._save_to_cache_relational(uni_data, major)
+                        universities.append(uni_data)
+                else:
+                    logger.info("No new universities found (all already in cache)")
                 
             except Exception as e:
-                logger.warning(f"Hybrid discovery failed: {e}. Using cache only.")
+                logger.warning(f"Incremental discovery failed: {e}. Using cache only.")
         else:
-            logger.info("Cache sufficient, skipping web discovery")
+            logger.info(f"Cache mature ({fresh_count} universities), skipping discovery")
         
-        # Deduplicate by name
+        # Deduplicate by name (case-insensitive)
         seen = set()
         unique = []
         for uni in universities:
-            if uni.name not in seen:
-                seen.add(uni.name)
+            name_lower = uni.name.lower()
+            if name_lower not in seen:
+                seen.add(name_lower)
                 unique.append(uni)
         
         logger.info(f"Phase 4: Returning {len(unique)} universities for scoring")
@@ -262,8 +310,8 @@ class CollegeSearchService:
         Includes retry logic for 429 rate limits.
         """
         gpa = profile.get("gpa", 3.5)
-        nationality = profile.get("nationality", "international")
         is_domestic = student_type == "domestic"
+        nationality = profile.get("nationality", "US" if is_domestic else "Unknown")
         
         prompt = f"""Research the LATEST college admission statistics for {major} programs.
 
@@ -351,8 +399,8 @@ Use the most recent 2024/2025 admission data available."""
             return None
         
         gpa = profile.get("gpa", 3.5)
-        nationality = profile.get("nationality", "international")
         is_domestic = student_type == "domestic"
+        nationality = profile.get("nationality", "US" if is_domestic else "Unknown")
         
         # Prompt for RAW TEXT output (NOT JSON)
         prompt = f"""Research the LATEST college admission statistics for {major} programs.
@@ -443,8 +491,8 @@ IMPORTANT: Extract ALL universities mentioned and format them according to this 
       "sat_25th": 1400,
       "sat_75th": 1550,
       "major_strength_score": 8,
-      "need_blind_international": true,
-      "meets_full_need": true
+      "need_blind_international": false,
+      "meets_full_need": false
     }}
   ]
 }}
@@ -456,6 +504,12 @@ RULES:
 4. major_strength_score must be an integer from 1 to 10
 5. If data is missing, use reasonable estimates based on the university's selectivity
 6. campus_setting must be exactly "URBAN", "SUBURBAN", or "RURAL"
+
+CRITICAL - NEED-BLIND POLICY:
+- need_blind_international should be TRUE ONLY for these confirmed schools: Harvard, Yale, Princeton, MIT, Amherst, Dartmouth, Bowdoin
+- For ALL other schools, default to FALSE unless explicitly stated otherwise
+- Most public universities (like Penn State, UC schools, state universities) are NOT need-blind for international students
+- When in doubt, use FALSE
 
 Return ONLY the valid JSON object, nothing else."""
 
@@ -510,8 +564,8 @@ OUTPUT FORMAT (JSON):
       "sat_25th": 1400,
       "sat_75th": 1550,
       "major_strength_score": 8,
-      "need_blind_international": true,
-      "meets_full_need": true
+      "need_blind_international": false,
+      "meets_full_need": false
     }}
   ]
 }}
@@ -522,6 +576,11 @@ RULES:
 3. SAT scores must be between 400 and 1600 (use 0 if unknown)
 4. major_strength_score must be an integer from 1 to 10
 5. campus_setting must be exactly "URBAN", "SUBURBAN", or "RURAL"
+
+CRITICAL - NEED-BLIND POLICY:
+- need_blind_international = TRUE ONLY for: Harvard, Yale, Princeton, MIT, Amherst, Dartmouth, Bowdoin
+- ALL other schools (especially public universities like Penn State, UC schools) = FALSE
+- When in doubt, use FALSE
 
 Return ONLY the valid JSON object."""
 
@@ -653,8 +712,8 @@ Return ONLY the valid JSON object."""
         Used when Gemini is completely unavailable.
         """
         gpa = profile.get("gpa", 3.5)
-        nationality = profile.get("nationality", "international")
         is_domestic = student_type == "domestic"
+        nationality = profile.get("nationality", "US" if is_domestic else "Unknown")
         
         prompt = f"""You are simulating an expert college admissions database.
 
@@ -741,14 +800,19 @@ Return ONLY valid JSON matching this exact schema:
                     sat_25 = validate_sat(uni.get("sat_25th"))
                     sat_75 = validate_sat(uni.get("sat_75th"))
                     
+                    uni_name = uni.get("name", "Unknown University")
+                    
+                    # OVERRIDE LLM value with verified list (more reliable)
+                    verified_need_blind = is_verified_need_blind_international(uni_name)
+                    
                     universities.append(UniversityData(
-                        name=uni.get("name", "Unknown University"),
+                        name=uni_name,
                         acceptance_rate=float(uni.get("acceptance_rate", 0.5)),
                         median_gpa=float(uni.get("median_gpa", 3.5)),
                         sat_25th=sat_25,
                         sat_75th=sat_75,
                         major_ranking=uni.get("major_strength_score"),
-                        need_blind_international=bool(uni.get("need_blind_international", False)),
+                        need_blind_international=verified_need_blind,  # Use verified, not LLM
                         data_source=data_source,
                         has_major=True,
                         student_major=major,
