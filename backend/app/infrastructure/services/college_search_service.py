@@ -68,34 +68,6 @@ class StructuredUniversityResponse(BaseModel):
     universities: List[UniversityExtraction] = Field(..., description="List of universities")
 
 
-# ============== Verified Need-Blind Schools (Hardcoded Source of Truth) ==============
-# These are the ONLY schools confirmed to be need-blind for international students
-# Source: https://www.collegetransitions.com/blog/need-blind-schools-international-students/
-VERIFIED_NEED_BLIND_INTERNATIONAL = frozenset([
-    "harvard",
-    "yale", 
-    "princeton",
-    "mit",
-    "massachusetts institute of technology",
-    "amherst college",
-    "amherst",
-    "dartmouth",
-    "dartmouth college",
-    "bowdoin",
-    "bowdoin college",
-])
-
-
-def is_verified_need_blind_international(university_name: str) -> bool:
-    """
-    Check if a university is verified need-blind for international students.
-    
-    Uses hardcoded list - MORE RELIABLE than LLM inference.
-    """
-    name_lower = university_name.lower().strip()
-    return any(verified in name_lower for verified in VERIFIED_NEED_BLIND_INTERNATIONAL)
-
-
 class CollegeSearchService:
     """
     Hybrid search service implementing the Data Flywheel.
@@ -802,9 +774,6 @@ Return ONLY valid JSON matching this exact schema:
                     
                     uni_name = uni.get("name", "Unknown University")
                     
-                    # OVERRIDE LLM value with verified list (more reliable)
-                    verified_need_blind = is_verified_need_blind_international(uni_name)
-                    
                     universities.append(UniversityData(
                         name=uni_name,
                         acceptance_rate=float(uni.get("acceptance_rate", 0.5)),
@@ -812,7 +781,7 @@ Return ONLY valid JSON matching this exact schema:
                         sat_25th=sat_25,
                         sat_75th=sat_75,
                         major_ranking=uni.get("major_strength_score"),
-                        need_blind_international=verified_need_blind,  # Use verified, not LLM
+                        need_blind_international=bool(uni.get("need_blind_international", False)),
                         data_source=data_source,
                         has_major=True,
                         student_major=major,
