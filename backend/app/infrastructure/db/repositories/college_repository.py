@@ -151,6 +151,19 @@ class CollegeRepository(BaseRepository[College, CollegeCreate, CollegeUpdate]):
         
         new_college = await self.create(data)
         return new_college, True
+    
+    async def get_by_ipeds_id(self, ipeds_id: int) -> Optional[College]:
+        """Get a college by its IPEDS Unit ID (unique across US institutions)."""
+        stmt = select(College).where(College.ipeds_id == ipeds_id)
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+    
+    async def update(self, college: College) -> College:
+        """Update an existing college record."""
+        self.session.add(college)
+        await self.session.commit()
+        await self.session.refresh(college)
+        return college
 
 
 class CollegeMajorStatsRepository(

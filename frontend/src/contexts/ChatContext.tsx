@@ -227,9 +227,10 @@ export function ChatProvider({ children }: ChatProviderProps) {
         thread_id: currentThreadId,
       };
 
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE}/api/recommend/stream`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+        headers: { ...headers, 'Accept': 'text/event-stream' },
         body: JSON.stringify(requestBody),
       });
 

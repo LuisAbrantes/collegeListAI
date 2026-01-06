@@ -71,13 +71,13 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_college_info",
-            "description": "Get detailed information about a specific college. Use when user asks about a particular school.",
+            "description": "Get detailed information about a SPECIFIC college by name. ALWAYS use this when user asks about a particular school like 'tell me about X university'. If not in database, automatically searches web to discover and save the university data.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "name": {
                         "type": "string",
-                        "description": "The name of the college (e.g., 'MIT', 'Stanford University')"
+                        "description": "The exact name of the college (e.g., 'Stetson University', 'Reed College', 'MIT')"
                     }
                 },
                 "required": ["name"]
@@ -192,10 +192,12 @@ class ToolExecutor:
         self,
         college_search_service: CollegeSearchService,
         college_repository: CollegeRepository,
+        major_stats_repository,
         scorer: MatchScorer
     ):
         self.search_service = college_search_service
         self.college_repo = college_repository
+        self.stats_repo = major_stats_repository
         self.scorer = scorer
     
     async def execute(
@@ -223,7 +225,7 @@ class ToolExecutor:
             return await self._search_colleges(arguments, student_profile, student_type)
         
         elif tool_name == "get_college_info":
-            return await self._get_college_info(arguments, student_profile)
+            return await self._get_college_info(arguments, student_profile, student_type)
         
         elif tool_name == "get_student_profile":
             return self._get_student_profile(student_profile)
@@ -342,68 +344,69 @@ class ToolExecutor:
     async def _get_college_info(
         self,
         args: Dict[str, Any],
-        profile: Dict[str, Any]
+        profile: Dict[str, Any],
+        student_type: str = "domestic"
     ) -> Dict[str, Any]:
         """
         Get DETAILED information about a specific college.
         
-        Returns institutional data + major-specific stats if available.
+        Uses CollegeDataService for cache-first strategy with freshness checking.
+        Returns complete institutional data from College Scorecard.
         """
+        from app.infrastructure.services.college_data_service import CollegeDataService
+        from app.infrastructure.services.college_scorecard_service import CollegeScorecardService
+        
         name = args.get("name", "")
-        major = profile.get("major", "Computer Science")
         
         if not name:
             return {"error": "College name is required"}
         
-        # Try exact match first
-        college = await self.college_repo.get_by_name(name)
+        logger.info(f"[TOOL] Executing get_college_info with args: {args}")
         
-        if not college:
-            # Try fuzzy search
-            colleges = await self.college_repo.search_by_name(name, limit=1)
-            if colleges:
-                college = colleges[0]
+        # Use CollegeDataService for complete data with freshness checking
+        scorecard_service = CollegeScorecardService()
+        data_service = CollegeDataService(
+            college_repo=self.college_repo,
+            stats_repo=self.stats_repo,
+            scorecard_service=scorecard_service,
+        )
         
-        if not college:
+        dto = await data_service.get_college(name)
+        
+        if not dto:
             return {
                 "found": False,
                 "name": name,
-                "message": f"'{name}' is not in our database yet. You could ask for a new college list to discover this school."
+                "message": f"Could not find '{name}' in US College databases. Please check the spelling or try the full official name."
             }
         
-        # Get major-specific stats if available
-        from app.infrastructure.db.repositories.college_repository import CollegeMajorStatsRepository
-        
-        # Build response with available data
+        # Return complete data from DTO
         result = {
             "found": True,
-            "name": college.name,
-            "campus_setting": college.campus_setting,
-            "state": college.state,
-            "tuition_in_state": college.tuition_in_state,
-            "tuition_out_of_state": college.tuition_out_of_state,
-            "tuition_international": college.tuition_international,
-            "need_blind_domestic": college.need_blind_domestic,
-            "need_blind_international": college.need_blind_international,
-            "meets_full_need": college.meets_full_need,
+            "name": dto.name,
+            "state": dto.state,
+            "city": dto.city,
+            "campus_setting": dto.campus_setting,
+            "acceptance_rate": dto.acceptance_rate,
+            "acceptance_rate_display": dto.acceptance_rate_percent,
+            "sat_range": dto.sat_range,
+            "sat_25th": dto.sat_25th,
+            "sat_75th": dto.sat_75th,
+            "act_range": dto.act_range,
+            "act_25th": dto.act_25th,
+            "act_75th": dto.act_75th,
+            "tuition_in_state": dto.tuition_in_state,
+            "tuition_out_of_state": dto.tuition_out_of_state,
+            "tuition_international": dto.tuition_international,
+            "student_size": dto.student_size,
+            "need_blind_domestic": dto.need_blind_domestic,
+            "need_blind_international": dto.need_blind_international,
+            "meets_full_need": dto.meets_full_need,
+            "data_source": dto.data_source,
+            "data_freshness": "current" if dto.is_fresh else "may be outdated",
         }
         
-        # Try to get major-specific stats
-        try:
-            college_with_stats = await self.college_repo.get_with_stats_by_name(
-                college.name, major
-            )
-            if college_with_stats:
-                result["major"] = major
-                result["acceptance_rate"] = college_with_stats.acceptance_rate
-                result["median_gpa"] = college_with_stats.median_gpa
-                result["sat_25th"] = college_with_stats.sat_25th
-                result["sat_75th"] = college_with_stats.sat_75th
-                result["major_strength"] = college_with_stats.major_strength
-        except Exception:
-            # Major stats not available, still return institutional data
-            pass
-        
+        logger.info(f"[TOOL] Returning college data: {dto.name} (source: {dto.data_source})")
         return result
     
     def _get_student_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:

@@ -34,7 +34,7 @@ SYSTEM_PROMPT = """You are an expert college advisor helping students build and 
 
 AVAILABLE TOOLS:
 - search_colleges: Get a NEW scored list of college recommendations
-- get_college_info: Get DETAILED info about a specific college
+- get_college_info: Get DETAILED info about a specific college (auto-discovers via web if not in database)
 - get_student_profile: Get the student's current profile data
 - add_to_college_list: Save a college to the student's list
 - remove_from_college_list: Remove a college from the student's list
@@ -42,8 +42,8 @@ AVAILABLE TOOLS:
 - get_my_college_list: Show the student's saved college list
 
 TOOL SELECTION RULES (STRICT PRIORITY ORDER):
-1. If user asks about a SPECIFIC SCHOOL by name (e.g., "tell me about MIT"):
-   → Use get_college_info
+1. If user asks about a SPECIFIC SCHOOL by name (e.g., "tell me about Stetson University", "info on Reed College"):
+   → ALWAYS use get_college_info - it will automatically search the web if not in database
 
 2. If user asks for RECOMMENDATIONS (e.g., "give me colleges", "recommend schools"):
    → Use search_colleges with appropriate counts
@@ -296,7 +296,7 @@ async def _execute_tools_and_respond(
         search_service = CollegeSearchService(college_repo, stats_repo)
         scorer = MatchScorer()
         
-        executor = ToolExecutor(search_service, college_repo, scorer)
+        executor = ToolExecutor(search_service, college_repo, stats_repo, scorer)
         
         # Execute all tool calls
         tool_results = []

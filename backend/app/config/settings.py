@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     perplexity_api_key: Optional[str] = None
     perplexity_model: str = "sonar"  # sonar, sonar-pro
     
+    # College Scorecard API (official IPEDS data)
+    college_scorecard_api_key: Optional[str] = None
+    
     # Groq Configuration (for synthesis)
     groq_api_key: Optional[str] = None
     groq_model: str = "llama-3.3-70b-versatile"  # or mixtral-8x7b-32768

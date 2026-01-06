@@ -30,6 +30,12 @@ class CollegeBase(SQLModel):
         description="University name (unique identifier)"
     )
     
+    ipeds_id: Optional[int] = Field(
+        default=None,
+        index=True,
+        description="IPEDS Unit ID from College Scorecard (unique across US institutions)"
+    )
+    
     campus_setting: Optional[str] = Field(
         default=None,
         max_length=50,
@@ -73,6 +79,54 @@ class CollegeBase(SQLModel):
         default=None,
         max_length=50,
         description="US state where main campus is located"
+    )
+    
+    city: Optional[str] = Field(
+        default=None,
+        max_length=100,
+        description="City where main campus is located"
+    )
+    
+    # Admission statistics (from College Scorecard)
+    acceptance_rate: Optional[float] = Field(
+        default=None,
+        ge=0.0, le=1.0,
+        description="Overall acceptance rate as decimal"
+    )
+    
+    sat_25th: Optional[int] = Field(
+        default=None,
+        ge=400, le=1600,
+        description="25th percentile SAT score (combined)"
+    )
+    
+    sat_75th: Optional[int] = Field(
+        default=None,
+        ge=400, le=1600,
+        description="75th percentile SAT score (combined)"
+    )
+    
+    act_25th: Optional[int] = Field(
+        default=None,
+        ge=1, le=36,
+        description="25th percentile ACT score"
+    )
+    
+    act_75th: Optional[int] = Field(
+        default=None,
+        ge=1, le=36,
+        description="75th percentile ACT score"
+    )
+    
+    student_size: Optional[int] = Field(
+        default=None,
+        description="Total undergraduate enrollment"
+    )
+    
+    # Metadata
+    updated_at: Optional[datetime] = Field(
+        default_factory=datetime.utcnow,
+        description="Last update timestamp for freshness checking"
     )
 
 
