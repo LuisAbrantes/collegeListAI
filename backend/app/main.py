@@ -66,13 +66,24 @@ app = FastAPI(
 )
 
 # CORS configuration from Settings
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# In development, allow all origins to avoid CORS issues
+if settings.debug:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 # ============================================================================
@@ -139,11 +150,12 @@ async def root():
 # Import and register routers
 # ============================================================================
 
-from app.api.routes import profiles, search, chats, college_list, colleges
+from app.api.routes import profiles, search, chats, college_list, colleges, admin
 
 app.include_router(profiles.router, prefix="/api", tags=["Profiles"])
 app.include_router(search.router, prefix="/api", tags=["Search & Recommendations"])
 app.include_router(chats.router, prefix="/api", tags=["Chats"])
 app.include_router(college_list.router, tags=["College List"])
 app.include_router(colleges.router, tags=["Colleges"])
+app.include_router(admin.router, tags=["Admin"])
 

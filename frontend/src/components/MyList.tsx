@@ -66,7 +66,7 @@ export function MyList({ className = '' }: MyListProps) {
   const [searchResults, setSearchResults] = useState<CollegeSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
-  const [selectedLabel, setSelectedLabel] = useState<'reach' | 'target' | 'safety'>('target');
+  const [selectedLabel, setSelectedLabel] = useState<'reach' | 'target' | 'safety' | null>(null); // null = auto-calculate
   const searchRef = useRef<HTMLDivElement>(null);
 
   const fetchData = useCallback(async () => {
@@ -207,20 +207,31 @@ export function MyList({ className = '' }: MyListProps) {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('user_college_list')
-        .insert({
-          id: crypto.randomUUID(),
-          user_id: user.id,
+      // Use backend API for auto-label calculation
+      const response = await fetch(`${API_BASE}/api/college-list`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${user.id}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           college_name: collegeName,
-          label: selectedLabel,
-        })
-        .select()
-        .single();
+          label: selectedLabel, // null = auto-calculate, otherwise user's choice
+        }),
+      });
 
-      if (error) throw error;
+      if (!response.ok) throw new Error('Failed to add college');
       
-      setColleges(prev => [data, ...prev]);
+      const data = await response.json();
+      
+      // Convert API response to match local state format
+      setColleges(prev => [{
+        id: data.id,
+        college_name: data.college_name,
+        label: data.label,
+        notes: data.notes,
+        added_at: data.added_at,
+      }, ...prev]);
       setSearchQuery('');
       setShowResults(false);
     } catch (err) {
@@ -284,10 +295,14 @@ export function MyList({ className = '' }: MyListProps) {
         <div className="flex gap-2">
           {/* Label Selector */}
           <select
-            value={selectedLabel}
-            onChange={(e) => setSelectedLabel(e.target.value as 'reach' | 'target' | 'safety')}
+            value={selectedLabel || 'auto'}
+            onChange={(e) => {
+              const val = e.target.value;
+              setSelectedLabel(val === 'auto' ? null : val as 'reach' | 'target' | 'safety');
+            }}
             className="px-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-zinc-300 focus:outline-none focus:border-zinc-600"
           >
+            <option value="auto">✨ Auto</option>
             <option value="reach">Reach</option>
             <option value="target">Target</option>
             <option value="safety">Safety</option>

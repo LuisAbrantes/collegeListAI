@@ -32,6 +32,29 @@ logger = logging.getLogger(__name__)
 # System prompt for the agent
 SYSTEM_PROMPT = """You are an expert college advisor helping students build and manage their college list.
 
+CRITICAL: CONTEXT AWARENESS - FOLLOW-UP QUESTIONS
+When the user responds briefly (e.g., "yes", "tell me more", "all of them", "I'm interested"):
+1. ALWAYS refer back to what was discussed in YOUR PREVIOUS RESPONSE
+2. If you just discussed Purdue campuses, and user says "yes I'm interested in all", they mean ALL PURDUE CAMPUSES - NOT a generic search!
+3. NEVER do a generic search when the user is responding to specific information you provided
+
+CRITICAL: COMPLETENESS - INCLUDE ALL ITEMS
+When user asks about "all" campuses of a university system (e.g., "tell me about all UCs"):
+1. You MUST include EVERY campus - do NOT summarize or omit any
+2. UC System has 9 undergraduate campuses: Berkeley, UCLA, San Diego, Santa Barbara, Irvine, Davis, Santa Cruz, Riverside, Merced (plus UCSF for graduate)
+3. For each campus, ALWAYS use the admission_category returned by the tool - this is AUTO-CALCULATED
+
+CONTEXT EXAMPLES:
+- You discussed Purdue Fort Wayne and Northwest → User says "interested in all campuses" → Get info on Purdue Main Campus (West Lafayette) SPECIFICALLY
+- You showed college recommendations → User says "tell me more about the first one" → Use get_college_info for that specific college
+- You mentioned MIT → User says "add it" → Add MIT to their list
+
+UNIVERSITY CAMPUS DISAMBIGUATION:
+When a university has multiple campuses, get info on ALL major campuses:
+- "Purdue University" → Purdue University-Main Campus (West Lafayette), Purdue Fort Wayne, Purdue Northwest
+- "All UCs" → UC Berkeley, UCLA, UCSD, UCSB, UCI, UC Davis, UC Santa Cruz, UC Riverside, UC Merced
+- "Penn State" → Penn State University Park (main), and regional campuses
+
 AVAILABLE TOOLS:
 - search_colleges: Get a NEW scored list of college recommendations
 - get_college_info: Get DETAILED info about a specific college (auto-discovers via web if not in database)
@@ -48,8 +71,8 @@ TOOL SELECTION RULES (STRICT PRIORITY ORDER):
 2. If user asks for RECOMMENDATIONS (e.g., "give me colleges", "recommend schools"):
    → Use search_colleges with appropriate counts
 
-3. If user wants to ADD to their list (e.g., "add MIT to my list", "save Stanford"):
-   → Use add_to_college_list
+3. If user wants to ADD to their list (e.g., "add MIT to my list", "save Stanford", "add this to my list"):
+   → Use add_to_college_list - infer the college name from context if not explicit
 
 4. If user wants to REMOVE from list (e.g., "remove Harvard from my list"):
    → Use remove_from_college_list
@@ -79,6 +102,8 @@ Example format for each school:
 
 DO NOT just list school names without metrics. The metrics are critical for decision-making.
 
+DATA ACCURACY: Always use the admission_category field returned by get_college_info - it is auto-calculated. Do not invent acceptance rates or categories from memory.
+
 REMEMBER: You're helping students build THEIR college list - a central tool for their application journey."""
 
 
@@ -103,11 +128,18 @@ async def agent_node(state: RecommendationAgentState) -> Dict[str, Any]:
         # Build messages for LLM
         messages = _build_messages(user_query, profile, conversation_history)
         
-        # Call LLM with tools
-        response = await _call_llm_with_tools(messages)
+        # Call LLM with tools - retry up to 2 times
+        response = None
+        for attempt in range(2):
+            response = await _call_llm_with_tools(messages)
+            if response:
+                break
+            logger.warning(f"[AGENT] LLM call failed, attempt {attempt + 1}/2")
         
         if not response:
-            return {"stream_content": ["I apologize, I encountered an issue. Please try again."]}
+            # Provide helpful fallback response based on query
+            fallback_msg = _generate_fallback_response(user_query)
+            return {"stream_content": [fallback_msg]}
         
         # Check if LLM wants to call a tool
         tool_calls = response.get("tool_calls", [])
@@ -130,10 +162,33 @@ async def agent_node(state: RecommendationAgentState) -> Dict[str, Any]:
         
     except Exception as e:
         logger.error(f"[AGENT] Error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return {
-            "stream_content": ["I apologize, something went wrong. Please try again."],
+            "stream_content": ["I'm having trouble processing your request right now. Could you please rephrase your question or try again in a moment?"],
             "recommendations": [],
         }
+
+
+def _generate_fallback_response(query: str) -> str:
+    """Generate a helpful fallback when LLM is unavailable."""
+    query_lower = query.lower()
+    
+    if "campus" in query_lower or "more" in query_lower:
+        return """I'd be happy to help you explore different campuses! 
+
+Many universities have multiple campuses with different admission rates and programs. For example, Purdue University has:
+- **Purdue West Lafayette** (main campus) - ~69% acceptance rate
+- **Purdue Fort Wayne** - ~86% acceptance rate
+- **Purdue Northwest** - ~90%+ acceptance rate
+
+Each campus has its own application process. Would you like me to look up specific campus information? Just tell me which school you're interested in!"""
+    
+    elif "add" in query_lower or "list" in query_lower:
+        return "I can help you add colleges to your list. Please specify the college name, like 'Add MIT to my list' or 'Add Stanford to my college list'."
+    
+    else:
+        return "I'm ready to help you build your college list! You can ask me to find colleges for your major, get information about specific schools, or add colleges to your saved list."
 
 
 def _build_messages(
@@ -204,6 +259,11 @@ async def _call_groq_with_tools(messages: List[Dict[str, str]]) -> Optional[Dict
                 "tool_calls": choice.get("tool_calls", []),
             }
             
+    except httpx.HTTPStatusError as e:
+        # Log the actual error response for debugging
+        error_body = e.response.text if hasattr(e.response, 'text') else str(e)
+        logger.error(f"Groq API error: {e.response.status_code} - {error_body}")
+        return None
     except Exception as e:
         logger.error(f"Groq API error: {e}")
         return None

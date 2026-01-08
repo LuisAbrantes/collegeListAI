@@ -204,6 +204,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
     setMessages(prev => [...prev, assistantMessage]);
 
     try {
+      // Build conversation history for context (last 6 messages, excluding the one we just added)
+      const conversationHistory = messages.map(m => ({ 
+        role: m.role, 
+        content: m.content 
+      }));
+
       const requestBody = {
         query,
         citizenship_status: profile.citizenshipStatus || 'INTERNATIONAL',
@@ -225,6 +231,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
         ap_class_count: profile.apClassCount,
         ap_classes: profile.apClasses,
         thread_id: currentThreadId,
+        conversation_history: conversationHistory,  // For LLM context
       };
 
       const headers = await getAuthHeaders();

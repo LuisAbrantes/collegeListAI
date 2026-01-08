@@ -38,9 +38,50 @@ async def search_colleges(
     
     Returns matching colleges for display in the college list.
     Supports partial matching (e.g., "MIT" matches "Massachusetts Institute of Technology").
+    
+    Deduplication:
+    - Prioritizes records with IPEDS ID (official Scorecard data)
+    - Filters out duplicate entries with similar names
     """
+    import re
+    
     repo = CollegeRepository(session)
-    colleges = await repo.search_by_name(q, limit=limit)
+    # Fetch more than limit to allow for deduplication filtering
+    colleges = await repo.search_by_name(q, limit=limit * 3)
+    
+    def normalize_name(name: str) -> str:
+        """Normalize university name for duplicate detection."""
+        normalized = name.lower().strip()
+        normalized = re.sub(r'\([^)]*\)', '', normalized)  # Remove parenthetical
+        normalized = re.sub(r'[-,]', ' ', normalized)       # Replace hyphens/commas
+        normalized = re.sub(r'\s+', ' ', normalized)        # Collapse spaces
+        return normalized.strip()
+    
+    # Deduplicate: keep first occurrence based on normalized name
+    # Priority: records with IPEDS ID come first
+    seen_normalized = set()
+    unique_colleges = []
+    
+    # Sort: IPEDS records first
+    sorted_colleges = sorted(colleges, key=lambda c: (c.ipeds_id is None, c.name))
+    
+    for college in sorted_colleges:
+        norm = normalize_name(college.name)
+        
+        # Check if we've seen a similar name
+        is_duplicate = False
+        for seen in seen_normalized:
+            # Check for high overlap (one contains the other)
+            if norm in seen or seen in norm:
+                is_duplicate = True
+                break
+        
+        if not is_duplicate:
+            seen_normalized.add(norm)
+            unique_colleges.append(college)
+            
+            if len(unique_colleges) >= limit:
+                break
     
     return [
         CollegeSearchResult(
@@ -52,5 +93,46 @@ async def search_colleges(
             meets_full_need=college.meets_full_need,
             state=college.state,
         )
-        for college in colleges
+        for college in unique_colleges
     ]
+
+
+@router.post("/admin/deduplicate", response_model=dict)
+async def deduplicate_colleges(
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Admin endpoint to find and merge duplicate college records.
+    
+    This will:
+    1. Find colleges with IPEDS ID (authoritative) that have duplicates without IPEDS
+    2. Merge the duplicates into the authoritative record
+    3. Delete the legacy records
+    """
+    from app.infrastructure.services.deduplication_service import UniversityDeduplicator
+    
+    dedup = UniversityDeduplicator(session)
+    
+    # Find duplicates first
+    duplicates = await dedup.find_duplicates()
+    
+    if not duplicates:
+        return {"status": "no_duplicates", "deleted": 0, "message": "No duplicates found"}
+    
+    # Get details for response
+    details = []
+    for auth, dupes in duplicates:
+        details.append({
+            "keep": auth.name,
+            "ipeds_id": auth.ipeds_id,
+            "delete": [d.name for d in dupes]
+        })
+    
+    # Merge and delete
+    deleted = await dedup.merge_and_delete_duplicates()
+    
+    return {
+        "status": "success",
+        "deleted": deleted,
+        "details": details
+    }

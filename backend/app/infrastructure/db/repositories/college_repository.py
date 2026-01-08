@@ -164,6 +164,37 @@ class CollegeRepository(BaseRepository[College, CollegeCreate, CollegeUpdate]):
         await self.session.commit()
         await self.session.refresh(college)
         return college
+    
+    async def find_similar_name(
+        self, 
+        name: str, 
+        normalizer: callable = None
+    ) -> Optional[College]:
+        """
+        Find a college with a similar name using normalization.
+        
+        Args:
+            name: The name to search for
+            normalizer: A function to normalize names for comparison
+            
+        Returns:
+            The first matching college, or None
+        """
+        if not normalizer:
+            return None
+        
+        normalized_target = normalizer(name)
+        
+        # Get all colleges and check normalized names
+        stmt = select(College)
+        result = await self.session.execute(stmt)
+        colleges = result.scalars().all()
+        
+        for college in colleges:
+            if normalizer(college.name) == normalized_target:
+                return college
+        
+        return None
 
 
 class CollegeMajorStatsRepository(

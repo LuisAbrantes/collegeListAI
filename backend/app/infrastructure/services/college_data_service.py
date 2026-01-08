@@ -97,17 +97,31 @@ class CollegeDataService:
         """
         Get college from cache and check if it needs refresh.
         
+        Uses normalized name matching to find colleges regardless of formatting
+        (e.g., "University of California, Berkeley" matches "University of California-Berkeley")
+        
         Returns:
             Tuple of (College or None, needs_refresh bool)
         """
-        # Try exact match
+        # Try exact match first
         college = await self.college_repo.get_by_name(name)
         
         if not college:
-            # Try fuzzy search
-            colleges = await self.college_repo.search_by_name(name, limit=1)
+            # Try fuzzy search (ILIKE)
+            colleges = await self.college_repo.search_by_name(name, limit=5)
             if colleges:
+                # Pick best match
                 college = colleges[0]
+        
+        if not college:
+            # Try normalized name matching
+            from app.infrastructure.services.deduplication_service import UniversityDeduplicator
+            college = await self.college_repo.find_similar_name(
+                name, 
+                normalizer=UniversityDeduplicator.normalize_name
+            )
+            if college:
+                logger.info(f"[DATA-SERVICE] Found via normalized match: {college.name}")
         
         if not college:
             return None, True  # Not in cache, needs fetch
@@ -176,6 +190,32 @@ class CollegeDataService:
             existing_by_name.student_size = data.student_size
             existing_by_name.updated_at = datetime.utcnow()
             return await self.college_repo.update(existing_by_name)
+        
+        # Check for similar names using normalization (e.g., "UC Berkeley" vs "University of California-Berkeley")
+        from app.infrastructure.services.deduplication_service import UniversityDeduplicator
+        similar = await self.college_repo.find_similar_name(
+            data.name, 
+            normalizer=UniversityDeduplicator.normalize_name
+        )
+        
+        if similar:
+            # Upgrade similar record with IPEDS data
+            logger.info(f"[DATA-SERVICE] Upgrading similar '{similar.name}' with IPEDS: {data.name}")
+            similar.ipeds_id = data.ipeds_id
+            similar.name = data.name  # Use official Scorecard name
+            similar.state = data.state
+            similar.city = data.city
+            similar.campus_setting = data.campus_setting
+            similar.acceptance_rate = data.acceptance_rate
+            similar.sat_25th = data.sat_25th
+            similar.sat_75th = data.sat_75th
+            similar.act_25th = data.act_25th
+            similar.act_75th = data.act_75th
+            similar.tuition_in_state = data.tuition_in_state
+            similar.tuition_out_of_state = data.tuition_out_of_state
+            similar.student_size = data.student_size
+            similar.updated_at = datetime.utcnow()
+            return await self.college_repo.update(similar)
         
         # Create new record
         logger.info(f"[DATA-SERVICE] Inserting new: {data.name} (IPEDS: {data.ipeds_id})")

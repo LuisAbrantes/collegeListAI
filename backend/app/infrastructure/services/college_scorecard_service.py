@@ -87,11 +87,32 @@ class CollegeScorecardService:
         Search for a college by name.
         
         Returns the best match or None if not found.
+        Prioritizes main campus over satellite campuses for multi-campus universities.
+        Retries with alternative name formats if initial search fails.
         """
         if not self.api_key:
             logger.error("[SCORECARD] API key not configured")
             return None
         
+        # Try different name formats - Scorecard API is picky about formatting
+        name_variants = [
+            name,
+            name.replace(", ", "-"),  # "University of California, Berkeley" -> "University of California-Berkeley"
+            name.replace(",", "-"),
+            name.replace("-", ", "),  # Reverse
+        ]
+        # Remove duplicates while preserving order
+        name_variants = list(dict.fromkeys(name_variants))
+        
+        for variant in name_variants:
+            result = await self._search_single(variant)
+            if result:
+                return result
+        
+        return None
+    
+    async def _search_single(self, name: str) -> Optional[ScorecardCollegeData]:
+        """Search for a single name variant."""
         logger.info(f"[SCORECARD] Searching for '{name}'...")
         
         try:
@@ -102,7 +123,7 @@ class CollegeScorecardService:
                         "api_key": self.api_key,
                         "school.name": name,
                         "fields": self._fields,
-                        "per_page": 5,
+                        "per_page": 10,  # Get more results to find main campus
                     }
                 )
                 response.raise_for_status()
@@ -113,14 +134,45 @@ class CollegeScorecardService:
                     logger.info(f"[SCORECARD] No results for '{name}'")
                     return None
                 
-                # Return best match (first result)
-                result = results[0]
-                college = self._parse_result(result)
-                logger.info(f"[SCORECARD] Found: {college.name} (IPEDS: {college.ipeds_id})")
+                # Find the best match - prioritize by:
+                # 1. Exact name match (for main campus)
+                # 2. Largest student size (main campuses are typically larger)
+                best_result = None
+                name_lower = name.lower().strip()
+                
+                for result in results:
+                    result_name = result.get("school.name", "").lower()
+                    
+                    # Exact match preferred
+                    if result_name == name_lower or result_name == f"{name_lower}-main campus":
+                        best_result = result
+                        break
+                    
+                    # Check for "main campus" or "west lafayette" for Purdue
+                    if "main campus" in result_name or "west lafayette" in result_name:
+                        best_result = result
+                        break
+                    
+                    # Check for flagship indicators
+                    if "university park" in result_name:  # Penn State main
+                        best_result = result
+                        break
+                
+                # If no exact match, find largest by student size (main campus indicator)
+                if not best_result:
+                    results_with_size = [r for r in results if r.get("latest.student.size")]
+                    if results_with_size:
+                        best_result = max(results_with_size, key=lambda r: r.get("latest.student.size", 0))
+                    else:
+                        best_result = results[0]
+                
+                college = self._parse_result(best_result)
+                logger.info(f"[SCORECARD] Found: {college.name} (IPEDS: {college.ipeds_id}, Size: {college.student_size})")
                 return college
                 
         except httpx.HTTPStatusError as e:
-            logger.error(f"[SCORECARD] HTTP error: {e.response.status_code} - {e.response.text}")
+            # Don't log full HTML error, just status code
+            logger.warning(f"[SCORECARD] HTTP {e.response.status_code} for '{name}'")
             return None
         except Exception as e:
             logger.error(f"[SCORECARD] Error searching for '{name}': {e}")
