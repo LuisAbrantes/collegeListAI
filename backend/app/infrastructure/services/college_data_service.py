@@ -74,7 +74,13 @@ class CollegeDataService:
         
         if cached and not needs_refresh:
             logger.info(f"[DATA-SERVICE] Cache hit (fresh): {cached.name}")
-            return self._college_to_dto(cached, is_fresh=True)
+            dto = self._college_to_dto(cached, is_fresh=True)
+            
+            # Enrich via Perplexity if SAT missing
+            if dto.sat_25th is None or dto.sat_75th is None:
+                dto = await self._enrich_via_perplexity(dto)
+            
+            return dto
         
         # 2. Fetch fresh data from College Scorecard
         scorecard_data = await self.scorecard.search_by_name(name)
@@ -82,7 +88,16 @@ class CollegeDataService:
         if scorecard_data:
             logger.info(f"[DATA-SERVICE] Scorecard hit: {scorecard_data.name} (IPEDS: {scorecard_data.ipeds_id})")
             college = await self._upsert_from_scorecard(scorecard_data)
-            return self._college_to_dto(college, is_fresh=True, source="college_scorecard")
+            dto = self._college_to_dto(college, is_fresh=True, source="college_scorecard")
+            
+            # Enrich via Perplexity if SAT missing from Scorecard
+            if dto.sat_25th is None or dto.sat_75th is None:
+                dto = await self._enrich_via_perplexity(dto)
+                # Update cache with enriched data
+                if dto.sat_25th is not None:
+                    await self._update_sat_data(college.name, dto.sat_25th, dto.sat_75th)
+            
+            return dto
         
         # 3. If we have stale cache, return it
         if cached:
@@ -92,6 +107,91 @@ class CollegeDataService:
         # 4. Not found anywhere
         logger.info(f"[DATA-SERVICE] Not found: '{name}'")
         return None
+    
+    async def _enrich_via_perplexity(self, dto: CollegeDTO) -> CollegeDTO:
+        """
+        Enrich college data via Perplexity when Scorecard is missing data.
+        
+        Uses Perplexity Sonar to get real-time SAT data from web.
+        """
+        try:
+            from app.config.settings import settings
+            import httpx
+            import json
+            
+            if not settings.perplexity_api_key:
+                logger.warning("[DATA-SERVICE] Perplexity API key not configured, skipping enrichment")
+                return dto
+            
+            logger.info(f"[DATA-SERVICE] Enriching {dto.name} via Perplexity for SAT data...")
+            
+            prompt = f"""What are the SAT score ranges for {dto.name}? 
+            
+Please provide ONLY the following in JSON format:
+{{
+    "sat_25th_percentile": <number or null>,
+    "sat_75th_percentile": <number or null>,
+    "acceptance_rate": <decimal 0-1 or null>
+}}
+
+Use the most recent available data (2024-2025 if available). SAT scores should be the combined total (max 1600). Return null if data is not available."""
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    "https://api.perplexity.ai/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.perplexity_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": settings.perplexity_model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.1,
+                    }
+                )
+                response.raise_for_status()
+                data = response.json()
+                
+                content = data["choices"][0]["message"]["content"]
+                
+                # Extract JSON from response
+                import re
+                json_match = re.search(r'\{[^}]+\}', content, re.DOTALL)
+                if json_match:
+                    enriched_data = json.loads(json_match.group())
+                    
+                    if enriched_data.get("sat_25th_percentile"):
+                        dto.sat_25th = int(enriched_data["sat_25th_percentile"])
+                        logger.info(f"[DATA-SERVICE] Perplexity: SAT 25th = {dto.sat_25th}")
+                    
+                    if enriched_data.get("sat_75th_percentile"):
+                        dto.sat_75th = int(enriched_data["sat_75th_percentile"])
+                        logger.info(f"[DATA-SERVICE] Perplexity: SAT 75th = {dto.sat_75th}")
+                    
+                    if enriched_data.get("acceptance_rate") and dto.acceptance_rate is None:
+                        dto.acceptance_rate = float(enriched_data["acceptance_rate"])
+                        logger.info(f"[DATA-SERVICE] Perplexity: Acceptance = {dto.acceptance_rate:.0%}")
+                    
+                    dto.data_source = "college_scorecard+perplexity"
+                else:
+                    logger.warning(f"[DATA-SERVICE] Perplexity response had no JSON: {content[:200]}")
+                    
+        except Exception as e:
+            logger.error(f"[DATA-SERVICE] Perplexity enrichment failed: {e}")
+        
+        return dto
+    
+    async def _update_sat_data(self, college_name: str, sat_25th: int, sat_75th: int) -> None:
+        """Update SAT data in cache after Perplexity enrichment."""
+        try:
+            college = await self.college_repo.get_by_name(college_name)
+            if college:
+                college.sat_25th = sat_25th
+                college.sat_75th = sat_75th
+                await self.college_repo.session.commit()
+                logger.info(f"[DATA-SERVICE] Updated SAT data for {college_name}: {sat_25th}-{sat_75th}")
+        except Exception as e:
+            logger.error(f"[DATA-SERVICE] Failed to update SAT data: {e}")
     
     async def _get_with_freshness(self, name: str) -> Tuple[Optional[College], bool]:
         """

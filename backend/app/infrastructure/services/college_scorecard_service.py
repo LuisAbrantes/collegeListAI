@@ -94,12 +94,33 @@ class CollegeScorecardService:
             logger.error("[SCORECARD] API key not configured")
             return None
         
+        # Expand UC abbreviations FIRST
+        expanded_name = name
+        name_lower = name.lower().strip()
+        if name_lower.startswith('uc ') and len(name_lower) > 3:
+            # "UC Berkeley" -> "University of California-Berkeley"
+            campus = name[3:].strip()
+            expanded_name = f"University of California-{campus}"
+        elif name_lower == 'ucla':
+            expanded_name = "University of California-Los Angeles"
+        elif name_lower == 'ucsd':
+            expanded_name = "University of California-San Diego"
+        elif name_lower == 'uci':
+            expanded_name = "University of California-Irvine"
+        elif name_lower == 'ucsb':
+            expanded_name = "University of California-Santa Barbara"
+        elif name_lower == 'ucsc':
+            expanded_name = "University of California-Santa Cruz"
+        elif name_lower == 'ucr':
+            expanded_name = "University of California-Riverside"
+        
         # Try different name formats - Scorecard API is picky about formatting
         name_variants = [
-            name,
-            name.replace(", ", "-"),  # "University of California, Berkeley" -> "University of California-Berkeley"
-            name.replace(",", "-"),
-            name.replace("-", ", "),  # Reverse
+            expanded_name,
+            name,  # Original name as fallback
+            expanded_name.replace(", ", "-"),
+            expanded_name.replace(",", "-"),
+            expanded_name.replace("-", ", "),
         ]
         # Remove duplicates while preserving order
         name_variants = list(dict.fromkeys(name_variants))

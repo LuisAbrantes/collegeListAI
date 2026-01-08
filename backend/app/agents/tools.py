@@ -501,6 +501,13 @@ class ToolExecutor:
                     if colleges:
                         college = colleges[0]
                 
+                if not college:
+                    # Try normalized name search (UC Berkeley -> University of California-Berkeley)
+                    from app.infrastructure.services.deduplication_service import UniversityDeduplicator
+                    college = await college_repo.find_similar_name(college_name, UniversityDeduplicator.normalize_name)
+                    if college:
+                        logger.info(f"[TOOL] Found via normalized name: {college.name}")
+                
                 if college:
                     # Build context and university data for classification
                     student_ctx = StudentContext(

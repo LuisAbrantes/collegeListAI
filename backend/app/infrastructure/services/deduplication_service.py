@@ -56,6 +56,13 @@ class UniversityDeduplicator:
         # Remove parenthetical notes
         normalized = re.sub(r'\([^)]*\)', '', normalized)
         
+        # Expand common abbreviations BEFORE other normalizations
+        # UC Berkeley -> University of California Berkeley
+        if normalized.startswith('uc '):
+            normalized = 'university of california ' + normalized[3:]
+        elif normalized == 'ucla':
+            normalized = 'university of california los angeles'
+        
         # Replace hyphens and commas with spaces
         normalized = re.sub(r'[-,]', ' ', normalized)
         
