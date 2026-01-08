@@ -494,12 +494,14 @@ class ToolExecutor:
                 
                 college_repo = CollegeRepository(session)
                 college = await college_repo.get_by_name(college_name)
+                logger.info(f"[TOOL] get_by_name('{college_name}'): {college.name if college else 'NOT FOUND'}")
                 
                 if not college:
                     # Try fuzzy search
                     colleges = await college_repo.search_by_name(college_name, limit=1)
                     if colleges:
                         college = colleges[0]
+                        logger.info(f"[TOOL] search_by_name found: {college.name}")
                 
                 if not college:
                     # Try normalized name search (UC Berkeley -> University of California-Berkeley)
@@ -507,6 +509,8 @@ class ToolExecutor:
                     college = await college_repo.find_similar_name(college_name, UniversityDeduplicator.normalize_name)
                     if college:
                         logger.info(f"[TOOL] Found via normalized name: {college.name}")
+                    else:
+                        logger.warning(f"[TOOL] Could not find '{college_name}' in database - label will be None")
                 
                 if college:
                     # Build context and university data for classification
@@ -666,24 +670,26 @@ class ToolExecutor:
                 elif calculated_label:
                     calculated_label = str(calculated_label).lower()
                 
-                logger.info(f"[TOOL] Final label for {college_name}: {calculated_label}")
+                # Use official name from database if found
+                official_name = college.name if college else college_name
+                logger.info(f"[TOOL] Final label for {official_name}: {calculated_label}")
                 
                 repo = UserCollegeListRepository(session)
                 item = await repo.add(
                     user_id=user_id,
                     data=UserCollegeListItemCreate(
-                        college_name=college_name,
+                        college_name=official_name,  # Use official name from DB
                         label=calculated_label,
                         notes=notes,
                     )
                 )
                 await session.commit()
                 
-                logger.info(f"[TOOL] Successfully saved {college_name} with label {item.label}")
+                logger.info(f"[TOOL] Successfully saved {official_name} with label {item.label}")
                 
                 return {
                     "success": True,
-                    "message": f"Added {college_name} to your college list as a {calculated_label.upper() if calculated_label else 'UNCATEGORIZED'} school",
+                    "message": f"Added {official_name} to your college list as a {calculated_label.upper() if calculated_label else 'UNCATEGORIZED'} school",
                     "college_name": item.college_name,
                     "label": item.label,
                 }
