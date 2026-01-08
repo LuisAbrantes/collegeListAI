@@ -264,6 +264,7 @@ async def debug_request(request_data: dict):
 @router.post("/recommend/stream")
 async def stream_recommendations(
     request: RecommendRequest,
+    authorization: Optional[str] = Header(None),
 ):
     """
     Stream AI recommendations via Server-Sent Events (SSE).
@@ -276,9 +277,20 @@ async def stream_recommendations(
     from app.agents.graph import generate_with_agent
     from app.agents.state import StudentProfile
     
+    # Extract user_id from authorization header
+    user_id = None
+    if authorization:
+        try:
+            scheme, token = authorization.split()
+            if scheme.lower() == "bearer":
+                user_id = token
+        except ValueError:
+            pass
+    
     async def event_generator():
         try:
             profile: StudentProfile = {
+                "user_id": user_id,  # Pass user_id for list management tools
                 "citizenship_status": request.citizenship_status,
                 "nationality": request.nationality,
                 "gpa": request.gpa,

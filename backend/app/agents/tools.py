@@ -71,13 +71,13 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_college_info",
-            "description": "Get detailed information about a specific college. Use when user asks about a particular school.",
+            "description": "Get detailed information about a SPECIFIC college by name. ALWAYS use this when user asks about a particular school like 'tell me about X university'. Returns complete data including admission_category (Reach/Target/Safety) which is AUTO-CALCULATED based on acceptance rate - you MUST use this field, do NOT calculate categories yourself.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "name": {
                         "type": "string",
-                        "description": "The name of the college (e.g., 'MIT', 'Stanford University')"
+                        "description": "The exact name of the college (e.g., 'Stetson University', 'Reed College', 'MIT')"
                     }
                 },
                 "required": ["name"]
@@ -102,18 +102,13 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "add_to_college_list",
-            "description": "Add a college to the user's saved college list. Use when user says 'add X to my list' or 'save X'.",
+            "description": "Add a college to the user's saved college list. The admission label (Reach/Target/Safety) is calculated AUTOMATICALLY based on acceptance rate - do NOT try to set it. Use when user says 'add X to my list' or 'save X'. IMPORTANT: Do NOT call exclude_college after adding - they are separate actions.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "college_name": {
                         "type": "string",
                         "description": "Name of the college to add"
-                    },
-                    "label": {
-                        "type": "string",
-                        "enum": ["reach", "target", "safety"],
-                        "description": "Category for the college"
                     },
                     "notes": {
                         "type": "string",
@@ -192,10 +187,12 @@ class ToolExecutor:
         self,
         college_search_service: CollegeSearchService,
         college_repository: CollegeRepository,
+        major_stats_repository,
         scorer: MatchScorer
     ):
         self.search_service = college_search_service
         self.college_repo = college_repository
+        self.stats_repo = major_stats_repository
         self.scorer = scorer
     
     async def execute(
@@ -223,7 +220,7 @@ class ToolExecutor:
             return await self._search_colleges(arguments, student_profile, student_type)
         
         elif tool_name == "get_college_info":
-            return await self._get_college_info(arguments, student_profile)
+            return await self._get_college_info(arguments, student_profile, student_type)
         
         elif tool_name == "get_student_profile":
             return self._get_student_profile(student_profile)
@@ -342,68 +339,80 @@ class ToolExecutor:
     async def _get_college_info(
         self,
         args: Dict[str, Any],
-        profile: Dict[str, Any]
+        profile: Dict[str, Any],
+        student_type: str = "domestic"
     ) -> Dict[str, Any]:
         """
         Get DETAILED information about a specific college.
         
-        Returns institutional data + major-specific stats if available.
+        Uses CollegeDataService for cache-first strategy with freshness checking.
+        Returns complete institutional data from College Scorecard.
         """
+        from app.infrastructure.services.college_data_service import CollegeDataService
+        from app.infrastructure.services.college_scorecard_service import CollegeScorecardService
+        
         name = args.get("name", "")
-        major = profile.get("major", "Computer Science")
         
         if not name:
             return {"error": "College name is required"}
         
-        # Try exact match first
-        college = await self.college_repo.get_by_name(name)
+        logger.info(f"[TOOL] Executing get_college_info with args: {args}")
         
-        if not college:
-            # Try fuzzy search
-            colleges = await self.college_repo.search_by_name(name, limit=1)
-            if colleges:
-                college = colleges[0]
+        # Use CollegeDataService for complete data with freshness checking
+        scorecard_service = CollegeScorecardService()
+        data_service = CollegeDataService(
+            college_repo=self.college_repo,
+            stats_repo=self.stats_repo,
+            scorecard_service=scorecard_service,
+        )
         
-        if not college:
+        dto = await data_service.get_college(name)
+        
+        if not dto:
             return {
                 "found": False,
                 "name": name,
-                "message": f"'{name}' is not in our database yet. You could ask for a new college list to discover this school."
+                "message": f"Could not find '{name}' in US College databases. Please check the spelling or try the full official name."
             }
         
-        # Get major-specific stats if available
-        from app.infrastructure.db.repositories.college_repository import CollegeMajorStatsRepository
+        # Calculate admission category based on acceptance rate
+        admission_category = "Unknown"
+        if dto.acceptance_rate is not None:
+            if dto.acceptance_rate < 0.20:
+                admission_category = "Reach"
+            elif dto.acceptance_rate > 0.70:
+                admission_category = "Safety"
+            else:
+                admission_category = "Target"
         
-        # Build response with available data
+        # Return complete data from DTO
         result = {
             "found": True,
-            "name": college.name,
-            "campus_setting": college.campus_setting,
-            "state": college.state,
-            "tuition_in_state": college.tuition_in_state,
-            "tuition_out_of_state": college.tuition_out_of_state,
-            "tuition_international": college.tuition_international,
-            "need_blind_domestic": college.need_blind_domestic,
-            "need_blind_international": college.need_blind_international,
-            "meets_full_need": college.meets_full_need,
+            "name": dto.name,
+            "state": dto.state,
+            "city": dto.city,
+            "campus_setting": dto.campus_setting,
+            "acceptance_rate": dto.acceptance_rate,
+            "acceptance_rate_display": dto.acceptance_rate_percent,
+            "admission_category": admission_category,  # Auto-calculated: Reach (<20%), Target (20-70%), Safety (>70%)
+            "sat_range": dto.sat_range,
+            "sat_25th": dto.sat_25th,
+            "sat_75th": dto.sat_75th,
+            "act_range": dto.act_range,
+            "act_25th": dto.act_25th,
+            "act_75th": dto.act_75th,
+            "tuition_in_state": dto.tuition_in_state,
+            "tuition_out_of_state": dto.tuition_out_of_state,
+            "tuition_international": dto.tuition_international,
+            "student_size": dto.student_size,
+            "need_blind_domestic": dto.need_blind_domestic,
+            "need_blind_international": dto.need_blind_international,
+            "meets_full_need": dto.meets_full_need,
+            "data_source": dto.data_source,
+            "data_freshness": "current" if dto.is_fresh else "may be outdated",
         }
         
-        # Try to get major-specific stats
-        try:
-            college_with_stats = await self.college_repo.get_with_stats_by_name(
-                college.name, major
-            )
-            if college_with_stats:
-                result["major"] = major
-                result["acceptance_rate"] = college_with_stats.acceptance_rate
-                result["median_gpa"] = college_with_stats.median_gpa
-                result["sat_25th"] = college_with_stats.sat_25th
-                result["sat_75th"] = college_with_stats.sat_75th
-                result["major_strength"] = college_with_stats.major_strength
-        except Exception:
-            # Major stats not available, still return institutional data
-            pass
-        
+        logger.info(f"[TOOL] Returning college data: {dto.name} (source: {dto.data_source}, category: {admission_category})")
         return result
     
     def _get_student_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
@@ -451,30 +460,243 @@ class ToolExecutor:
         if not college_name:
             return {"success": False, "message": "College name is required"}
         
+        # Validate college name - reject obvious invalid values
+        invalid_names = [
+            "this college", "this university", "that college", "that university",
+            "it", "this", "that", "the college", "the university", "this one",
+        ]
+        if college_name.lower().strip() in invalid_names:
+            return {
+                "success": False, 
+                "message": f"Please specify the actual college name. '{college_name}' is not a valid college name."
+            }
+        
+        # Verify it looks like a real university name (at least 3 words or ends with University/College)
+        words = college_name.split()
+        if len(words) < 2 and not any(kw in college_name.lower() for kw in ["mit", "ucla", "nyu", "usc"]):
+            return {
+                "success": False,
+                "message": f"'{college_name}' doesn't appear to be a valid college name."
+            }
+        
         if not user_id:
             return {"success": False, "message": "User not authenticated"}
         
         try:
             async with get_session_context() as session:
+                # ALWAYS auto-calculate label based on acceptance rate - ignore any passed label
+                calculated_label = None  # Force calculation
+                
+                # Try to calculate the correct label based on acceptance rate
+                from app.domain.scoring.label_classifier import LabelClassifier
+                from app.domain.scoring.interfaces import StudentContext, UniversityData
+                from app.infrastructure.db.repositories.college_repository import CollegeRepository
+                
+                college_repo = CollegeRepository(session)
+                college = await college_repo.get_by_name(college_name)
+                logger.info(f"[TOOL] get_by_name('{college_name}'): {college.name if college else 'NOT FOUND'}")
+                
+                if not college:
+                    # Try fuzzy search
+                    colleges = await college_repo.search_by_name(college_name, limit=1)
+                    if colleges:
+                        college = colleges[0]
+                        logger.info(f"[TOOL] search_by_name found: {college.name}")
+                
+                if not college:
+                    # Try normalized name search (UC Berkeley -> University of California-Berkeley)
+                    from app.infrastructure.services.deduplication_service import UniversityDeduplicator
+                    college = await college_repo.find_similar_name(college_name, UniversityDeduplicator.normalize_name)
+                    if college:
+                        logger.info(f"[TOOL] Found via normalized name: {college.name}")
+                    else:
+                        logger.warning(f"[TOOL] Could not find '{college_name}' in database - label will be None")
+                
+                if college:
+                    # Build context and university data for classification
+                    student_ctx = StudentContext(
+                        is_domestic=profile.get("citizenship_status", "international") != "international",
+                        citizenship_status=profile.get("citizenship_status", "international"),
+                        nationality=profile.get("nationality"),
+                        gpa=profile.get("gpa", 3.5),
+                        sat_score=profile.get("sat_score"),
+                        act_score=profile.get("act_score"),
+                        intended_major=profile.get("major", "Undeclared"),
+                        income_tier=profile.get("household_income_tier", "MEDIUM"),
+                        campus_preference=profile.get("campus_vibe"),
+                    )
+                    
+                    # Get acceptance rate - try local first, then Scorecard, then fallback
+                    local_rate = getattr(college, 'acceptance_rate', None)
+                    logger.info(f"[TOOL] Local acceptance_rate for {college_name}: {local_rate} (type: {type(local_rate).__name__})")
+                    
+                    # Fallback rates for popular universities (2024-2025 data)
+                    KNOWN_ACCEPTANCE_RATES = {
+                        # UC System
+                        "berkeley": 0.12,
+                        "uc berkeley": 0.12,
+                        "university of california, berkeley": 0.12,
+                        "university of california-berkeley": 0.12,
+                        "ucla": 0.09,
+                        "uc los angeles": 0.09,
+                        "university of california, los angeles": 0.09,
+                        "university of california-los angeles": 0.09,
+                        "uc san diego": 0.24,
+                        "ucsd": 0.24,
+                        "university of california, san diego": 0.24,
+                        "university of california-san diego": 0.24,
+                        "uc davis": 0.37,
+                        "university of california, davis": 0.37,
+                        "university of california-davis": 0.37,
+                        "uc irvine": 0.21,
+                        "uci": 0.21,
+                        "university of california, irvine": 0.21,
+                        "university of california-irvine": 0.21,
+                        "uc santa barbara": 0.26,
+                        "ucsb": 0.26,
+                        "university of california, santa barbara": 0.26,
+                        "university of california-santa barbara": 0.26,
+                        "uc santa cruz": 0.47,
+                        "ucsc": 0.47,
+                        "university of california, santa cruz": 0.47,
+                        "university of california-santa cruz": 0.47,
+                        "uc riverside": 0.66,
+                        "ucr": 0.66,
+                        "university of california, riverside": 0.66,
+                        "university of california-riverside": 0.66,
+                        "uc merced": 0.89,
+                        "university of california, merced": 0.89,
+                        "university of california-merced": 0.89,
+                        
+                        # Purdue System
+                        "purdue": 0.50,
+                        "purdue university": 0.50,
+                        "purdue university-main campus": 0.50,
+                        "purdue fort wayne": 0.86,
+                        "purdue university fort wayne": 0.86,
+                        "purdue northwest": 0.71,
+                        "purdue university northwest": 0.71,
+                        
+                        # Ivy League + Elite
+                        "mit": 0.04,
+                        "massachusetts institute of technology": 0.04,
+                        "stanford": 0.04,
+                        "stanford university": 0.04,
+                        "harvard": 0.03,
+                        "harvard university": 0.03,
+                        "yale": 0.05,
+                        "yale university": 0.05,
+                        "princeton": 0.04,
+                        "princeton university": 0.04,
+                        "columbia": 0.04,
+                        "columbia university": 0.04,
+                        "upenn": 0.06,
+                        "university of pennsylvania": 0.06,
+                        "cornell": 0.07,
+                        "cornell university": 0.07,
+                        "duke": 0.06,
+                        "duke university": 0.06,
+                        "northwestern": 0.07,
+                        "northwestern university": 0.07,
+                        "carnegie mellon": 0.11,
+                        "carnegie mellon university": 0.11,
+                        "cmu": 0.11,
+                        "usc": 0.12,
+                        "university of southern california": 0.12,
+                        "georgia tech": 0.16,
+                        "georgia institute of technology": 0.16,
+                        "university of michigan": 0.18,
+                        "umich": 0.18,
+                    }
+                    
+                    acceptance_rate = None
+                    if local_rate and local_rate > 0:
+                        acceptance_rate = local_rate
+                    
+                    if not acceptance_rate:
+                        logger.info(f"[TOOL] No local rate, fetching from Scorecard...")
+                        try:
+                            from app.infrastructure.services.college_scorecard_service import CollegeScorecardService
+                            scorecard = CollegeScorecardService()
+                            scorecard_data = await scorecard.search_by_name(college_name)
+                            if scorecard_data and scorecard_data.acceptance_rate:
+                                acceptance_rate = scorecard_data.acceptance_rate
+                                logger.info(f"[TOOL] Fetched acceptance rate from Scorecard: {acceptance_rate:.0%}")
+                            else:
+                                logger.warning(f"[TOOL] Scorecard returned no acceptance rate")
+                        except Exception as sc_err:
+                            logger.warning(f"[TOOL] Scorecard lookup failed: {sc_err}")
+                    
+                    # Fallback to known rates if still no acceptance rate
+                    if not acceptance_rate:
+                        import re
+                        # Normalize name: remove parentheses, extra spaces, lowercase
+                        name_lower = college_name.lower().strip()
+                        name_normalized = re.sub(r'\s*\([^)]*\)', '', name_lower).strip()  # Remove (...)
+                        name_normalized = re.sub(r'\s+', ' ', name_normalized)  # Collapse spaces
+                        
+                        # Try exact match first
+                        acceptance_rate = KNOWN_ACCEPTANCE_RATES.get(name_lower)
+                        
+                        # Try normalized (without parentheses)
+                        if not acceptance_rate:
+                            acceptance_rate = KNOWN_ACCEPTANCE_RATES.get(name_normalized)
+                        
+                        # Try key parts (e.g., "berkeley" from "University of California, Berkeley")
+                        if not acceptance_rate:
+                            for key in KNOWN_ACCEPTANCE_RATES:
+                                if key in name_lower or name_lower in key:
+                                    acceptance_rate = KNOWN_ACCEPTANCE_RATES[key]
+                                    break
+                        
+                        if acceptance_rate:
+                            logger.info(f"[TOOL] Using fallback acceptance rate for {college_name}: {acceptance_rate:.0%}")
+                    
+                    uni_data = UniversityData(
+                        name=college.name,
+                        acceptance_rate=acceptance_rate,
+                        sat_25th=getattr(college, 'sat_25th', None),
+                        sat_75th=getattr(college, 'sat_75th', None),
+                    )
+                    
+                    classifier = LabelClassifier()
+                    label_result = classifier.classify(student_ctx, uni_data)
+                    calculated_label = label_result.value  # "reach", "target", or "safety"
+                    logger.info(f"[TOOL] Auto-calculated label for {college_name}: {calculated_label} (acceptance: {acceptance_rate:.0%})" if acceptance_rate else f"[TOOL] Label for {college_name}: {calculated_label} (no acceptance rate)")
+                
+                # Convert AdmissionLabel enum to lowercase string if needed
+                if calculated_label and hasattr(calculated_label, 'value'):
+                    calculated_label = calculated_label.value.lower()
+                elif calculated_label:
+                    calculated_label = str(calculated_label).lower()
+                
+                # Use official name from database if found
+                official_name = college.name if college else college_name
+                logger.info(f"[TOOL] Final label for {official_name}: {calculated_label}")
+                
                 repo = UserCollegeListRepository(session)
                 item = await repo.add(
                     user_id=user_id,
                     data=UserCollegeListItemCreate(
-                        college_name=college_name,
-                        label=label,
+                        college_name=official_name,  # Use official name from DB
+                        label=calculated_label,
                         notes=notes,
                     )
                 )
                 await session.commit()
                 
+                logger.info(f"[TOOL] Successfully saved {official_name} with label {item.label}")
+                
                 return {
                     "success": True,
-                    "message": f"Added {college_name} to your college list",
+                    "message": f"Added {official_name} to your college list as a {calculated_label.upper() if calculated_label else 'UNCATEGORIZED'} school",
                     "college_name": item.college_name,
                     "label": item.label,
                 }
         except Exception as e:
             logger.error(f"Error adding to college list: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return {"success": False, "message": str(e)}
     
     async def _remove_from_college_list(

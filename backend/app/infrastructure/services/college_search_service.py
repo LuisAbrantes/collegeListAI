@@ -68,34 +68,6 @@ class StructuredUniversityResponse(BaseModel):
     universities: List[UniversityExtraction] = Field(..., description="List of universities")
 
 
-# ============== Verified Need-Blind Schools (Hardcoded Source of Truth) ==============
-# These are the ONLY schools confirmed to be need-blind for international students
-# Source: https://www.collegetransitions.com/blog/need-blind-schools-international-students/
-VERIFIED_NEED_BLIND_INTERNATIONAL = frozenset([
-    "harvard",
-    "yale", 
-    "princeton",
-    "mit",
-    "massachusetts institute of technology",
-    "amherst college",
-    "amherst",
-    "dartmouth",
-    "dartmouth college",
-    "bowdoin",
-    "bowdoin college",
-])
-
-
-def is_verified_need_blind_international(university_name: str) -> bool:
-    """
-    Check if a university is verified need-blind for international students.
-    
-    Uses hardcoded list - MORE RELIABLE than LLM inference.
-    """
-    name_lower = university_name.lower().strip()
-    return any(verified in name_lower for verified in VERIFIED_NEED_BLIND_INTERNATIONAL)
-
-
 class CollegeSearchService:
     """
     Hybrid search service implementing the Data Flywheel.
@@ -130,9 +102,24 @@ class CollegeSearchService:
         else:
             self.gemini_client = None
         
+        # Perplexity client (for search_provider == perplexity)
+        if settings.perplexity_api_key:
+            from openai import OpenAI
+            self.perplexity_client = OpenAI(
+                api_key=settings.perplexity_api_key,
+                base_url="https://api.perplexity.ai"
+            )
+        else:
+            self.perplexity_client = None
+        
+        # College Scorecard service (official IPEDS data)
+        from app.infrastructure.services.college_scorecard_service import CollegeScorecardService
+        self.scorecard_service = CollegeScorecardService()
+        
         logger.info(
             f"Providers: search={settings.search_provider}, "
-            f"synthesis={settings.synthesis_provider}"
+            f"synthesis={settings.synthesis_provider}, "
+            f"scorecard={'enabled' if settings.college_scorecard_api_key else 'disabled'}"
         )
 
     
@@ -244,6 +231,155 @@ class CollegeSearchService:
         
         logger.info(f"Phase 4: Returning {len(unique)} universities for scoring")
         return unique[:limit]
+    
+    async def discover_single_university(
+        self,
+        university_name: str,
+        major: str,
+        profile: Dict[str, Any],
+        student_type: str
+    ) -> Optional[UniversityData]:
+        """
+        Discover a SPECIFIC university and save to database.
+        
+        Priority:
+        1. College Scorecard API (official IPEDS data) - US universities
+        2. Perplexity fallback (for non-US or missing data)
+        
+        Returns:
+            UniversityData if found, None if not discoverable
+        """
+        logger.info(f"[DISCOVERY] Looking up '{university_name}'...")
+        
+        try:
+            # ============================================================
+            # PHASE 1: Try College Scorecard API (official IPEDS data)
+            # ============================================================
+            scorecard_data = await self.scorecard_service.search_by_name(university_name)
+            
+            if scorecard_data:
+                logger.info(f"[DISCOVERY] Found in College Scorecard: {scorecard_data.name} (IPEDS: {scorecard_data.ipeds_id})")
+                
+                # Convert to UniversityData
+                uni_data = UniversityData(
+                    name=scorecard_data.name,
+                    acceptance_rate=scorecard_data.acceptance_rate,
+                    sat_25th=scorecard_data.sat_25th,
+                    sat_75th=scorecard_data.sat_75th,
+                    campus_setting=scorecard_data.campus_setting,
+                    state=scorecard_data.state,
+                    tuition_in_state=scorecard_data.tuition_in_state,
+                    tuition_out_of_state=scorecard_data.tuition_out_of_state,
+                    has_major=True,  # Will verify with program data later
+                    student_major=major,
+                    data_source="college_scorecard",
+                )
+                
+                # Upsert by IPEDS ID to prevent duplicates
+                await self._upsert_by_ipeds_id(scorecard_data, major)
+                
+                return uni_data
+            
+            # ============================================================
+            # PHASE 2: Fallback to Perplexity (non-US or not in Scorecard)
+            # ============================================================
+            logger.info(f"[DISCOVERY] Not in Scorecard, trying Perplexity fallback...")
+            
+            if not self.perplexity_client:
+                logger.warning("[DISCOVERY] No Perplexity client available")
+                return None
+            
+            system_msg = """You are a college data API. Output ONLY valid JSON.
+Never explain. If you don't have data, estimate based on similar schools."""
+
+            user_msg = f"""Return admission data for {university_name} as JSON:
+{{"name": "Official Name", "acceptance_rate": 0.XX, "sat_25th": XXXX, "sat_75th": XXXX, "campus_setting": "URBAN/SUBURBAN/RURAL", "state": "XX"}}"""
+            
+            response = await asyncio.to_thread(
+                self.perplexity_client.chat.completions.create,
+                model="sonar-pro",
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg}
+                ],
+            )
+            response_text = response.choices[0].message.content
+            logger.info(f"[DISCOVERY] Perplexity response: {response_text[:300]}")
+            
+            # Parse JSON
+            start_idx = response_text.find('{')
+            end_idx = response_text.rfind('}')
+            
+            if start_idx == -1 or end_idx == -1:
+                logger.warning("[DISCOVERY] No JSON in Perplexity response")
+                return None
+            
+            data = json.loads(response_text[start_idx : end_idx + 1])
+            
+            # Sanitize and create UniversityData
+            uni_data = UniversityData(
+                name=data.get("name", university_name),
+                acceptance_rate=data.get("acceptance_rate") if data.get("acceptance_rate", 0) > 0 else None,
+                sat_25th=data.get("sat_25th") if data.get("sat_25th", 0) >= 400 else None,
+                sat_75th=data.get("sat_75th") if data.get("sat_75th", 0) >= 400 else None,
+                campus_setting=data.get("campus_setting"),
+                state=data.get("state"),
+                has_major=True,
+                student_major=major,
+                data_source="perplexity_fallback",
+            )
+            
+            # Save to cache (no IPEDS ID for non-Scorecard data)
+            await self._save_to_cache_relational(uni_data, major)
+            
+            logger.info(f"[DISCOVERY] Saved from Perplexity: {uni_data.name}")
+            return uni_data
+            
+        except Exception as e:
+            logger.error(f"[DISCOVERY] Failed for '{university_name}': {e}", exc_info=True)
+            return None
+    
+    async def _upsert_by_ipeds_id(self, scorecard_data, major: str):
+        """Upsert college by IPEDS ID to prevent duplicates."""
+        from app.infrastructure.db.models.college import CollegeCreate, CollegeMajorStatsCreate
+        
+        # Check if exists by IPEDS ID
+        existing = await self.college_repo.get_by_ipeds_id(scorecard_data.ipeds_id)
+        
+        if existing:
+            # Update existing record
+            logger.info(f"[UPSERT] Updating existing: {existing.name} (IPEDS: {scorecard_data.ipeds_id})")
+            existing.acceptance_rate = scorecard_data.acceptance_rate
+            existing.sat_25th = scorecard_data.sat_25th
+            existing.sat_75th = scorecard_data.sat_75th
+            existing.campus_setting = scorecard_data.campus_setting
+            existing.tuition_in_state = scorecard_data.tuition_in_state
+            existing.tuition_out_of_state = scorecard_data.tuition_out_of_state
+            await self.college_repo.update(existing)
+        else:
+            # Insert new record
+            logger.info(f"[UPSERT] Inserting new: {scorecard_data.name} (IPEDS: {scorecard_data.ipeds_id})")
+            college_data = CollegeCreate(
+                name=scorecard_data.name,
+                ipeds_id=scorecard_data.ipeds_id,
+                state=scorecard_data.state,
+                campus_setting=scorecard_data.campus_setting,
+                tuition_in_state=scorecard_data.tuition_in_state,
+                tuition_out_of_state=scorecard_data.tuition_out_of_state,
+            )
+            college = await self.college_repo.create(college_data)
+            
+            # Add major stats if we have SAT data
+            if scorecard_data.sat_25th and scorecard_data.sat_75th:
+                stats_data = CollegeMajorStatsCreate(
+                    college_id=college.id,
+                    target_major=major,
+                    acceptance_rate=scorecard_data.acceptance_rate,
+                    sat_25th=scorecard_data.sat_25th,
+                    sat_75th=scorecard_data.sat_75th,
+                )
+                await self.stats_repo.create(stats_data)
+
     
     async def _discover_with_hybrid_pipeline(
         self,
@@ -802,9 +938,6 @@ Return ONLY valid JSON matching this exact schema:
                     
                     uni_name = uni.get("name", "Unknown University")
                     
-                    # OVERRIDE LLM value with verified list (more reliable)
-                    verified_need_blind = is_verified_need_blind_international(uni_name)
-                    
                     universities.append(UniversityData(
                         name=uni_name,
                         acceptance_rate=float(uni.get("acceptance_rate", 0.5)),
@@ -812,7 +945,7 @@ Return ONLY valid JSON matching this exact schema:
                         sat_25th=sat_25,
                         sat_75th=sat_75,
                         major_ranking=uni.get("major_strength_score"),
-                        need_blind_international=verified_need_blind,  # Use verified, not LLM
+                        need_blind_international=bool(uni.get("need_blind_international", False)),
                         data_source=data_source,
                         has_major=True,
                         student_major=major,

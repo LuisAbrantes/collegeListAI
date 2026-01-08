@@ -151,6 +151,50 @@ class CollegeRepository(BaseRepository[College, CollegeCreate, CollegeUpdate]):
         
         new_college = await self.create(data)
         return new_college, True
+    
+    async def get_by_ipeds_id(self, ipeds_id: int) -> Optional[College]:
+        """Get a college by its IPEDS Unit ID (unique across US institutions)."""
+        stmt = select(College).where(College.ipeds_id == ipeds_id)
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+    
+    async def update(self, college: College) -> College:
+        """Update an existing college record."""
+        self.session.add(college)
+        await self.session.commit()
+        await self.session.refresh(college)
+        return college
+    
+    async def find_similar_name(
+        self, 
+        name: str, 
+        normalizer: callable = None
+    ) -> Optional[College]:
+        """
+        Find a college with a similar name using normalization.
+        
+        Args:
+            name: The name to search for
+            normalizer: A function to normalize names for comparison
+            
+        Returns:
+            The first matching college, or None
+        """
+        if not normalizer:
+            return None
+        
+        normalized_target = normalizer(name)
+        
+        # Get all colleges and check normalized names
+        stmt = select(College)
+        result = await self.session.execute(stmt)
+        colleges = result.scalars().all()
+        
+        for college in colleges:
+            if normalizer(college.name) == normalized_target:
+                return college
+        
+        return None
 
 
 class CollegeMajorStatsRepository(

@@ -31,8 +31,7 @@ class LabelClassifier:
     
     # Acceptance rate thresholds
     REACH_ACCEPTANCE_THRESHOLD = 0.20    # Below 20% = Reach (CMU, Michigan, etc)
-    TARGET_ACCEPTANCE_THRESHOLD = 0.50   # 20-50% = Target
-    # Above 50% = Safety
+    TARGET_ACCEPTANCE_THRESHOLD = 0.70   # 20-70% = Target, Above 70% = Safety
     
     def classify(
         self,

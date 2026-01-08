@@ -80,7 +80,7 @@ export function Home() {
             <h1 className="text-3xl font-bold text-zinc-100">Welcome to College List AI</h1>
           </div>
           <p className="text-zinc-400 max-w-xl mx-auto">
-            Your AI-powered college advisor. Build a strategic list, get personalized recommendations.
+            Your AI-powered personalized college list maker. Build a strategic list, get personalized recommendations.
           </p>
         </motion.div>
 
