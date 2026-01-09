@@ -413,10 +413,10 @@ Never explain. If you don't have data, estimate based on similar schools."""
             logger.info("[SEARCH] Using Gemini with Search Grounding...")
             raw_text = await self._gemini_raw_search_with_retry(major, profile, student_type)
         
-        # Search failed - fallback to Ollama standalone
+        # Search failed - return empty list (no fallback)
         if not raw_text:
-            logger.warning(f"[SEARCH] {settings.search_provider} failed, using Ollama standalone")
-            return await self._ollama_standalone_discovery(major, profile, student_type)
+            logger.error(f"[SEARCH] {settings.search_provider} failed, no data available")
+            return []
         
         # ======================
         # STEP 2: SYNTHESIS (JSON structuring)
@@ -740,8 +740,8 @@ Return ONLY the valid JSON object."""
                 )
                 
                 if response.status_code == 429:
-                    logger.warning("Groq rate limit hit, falling back to Ollama...")
-                    return await self._ollama_structure_text(raw_text, major, data_source)
+                    logger.error("Groq rate limit hit (429), synthesis failed")
+                    return self._fallback_parse_raw_text(raw_text, major)
                 
                 response.raise_for_status()
                 data = response.json()
@@ -751,8 +751,8 @@ Return ONLY the valid JSON object."""
                 return self._parse_structured_response(json_text, major, data_source=data_source)
                 
         except httpx.HTTPError as e:
-            logger.error(f"Groq structuring failed: {e}, falling back to Ollama...")
-            return await self._ollama_structure_text(raw_text, major, data_source)
+            logger.error(f"Groq structuring failed: {e}")
+            return self._fallback_parse_raw_text(raw_text, major)
         except (KeyError, IndexError) as e:
             logger.error(f"Groq response parsing error: {e}")
             return self._fallback_parse_raw_text(raw_text, major)
@@ -819,8 +819,8 @@ Return ONLY the valid JSON object."""
                 )
                 
                 if response.status_code == 429:
-                    logger.warning("Perplexity rate limit hit, falling back to Ollama...")
-                    return await self._ollama_structure_text(raw_text, major, data_source)
+                    logger.error("Perplexity rate limit hit (429), synthesis failed")
+                    return self._fallback_parse_raw_text(raw_text, major)
                 
                 response.raise_for_status()
                 data = response.json()
@@ -830,79 +830,12 @@ Return ONLY the valid JSON object."""
                 return self._parse_structured_response(json_text, major, data_source=data_source)
                 
         except httpx.HTTPError as e:
-            logger.error(f"Perplexity structuring failed: {e}, falling back to Ollama...")
-            return await self._ollama_structure_text(raw_text, major, data_source)
+            logger.error(f"Perplexity structuring failed: {e}")
+            return self._fallback_parse_raw_text(raw_text, major)
         except (KeyError, IndexError) as e:
             logger.error(f"Perplexity response parsing error: {e}")
             return self._fallback_parse_raw_text(raw_text, major)
-    
-    async def _ollama_standalone_discovery(
-        self,
-        major: str,
-        profile: Dict[str, Any],
-        student_type: str
-    ) -> List[UniversityData]:
-        """
-        Fallback: Use Ollama alone for simulated discovery.
-        
-        Used when Gemini is completely unavailable.
-        """
-        gpa = profile.get("gpa", 3.5)
-        is_domestic = student_type == "domestic"
-        nationality = profile.get("nationality", "US" if is_domestic else "Unknown")
-        
-        prompt = f"""You are simulating an expert college admissions database.
 
-Generate realistic 2025 admission data for 15 US universities with strong {major} programs.
-
-Student Profile:
-- GPA: {gpa}/4.0  
-- Type: {"Domestic US" if is_domestic else f"International from {nationality}"}
-
-Include a diverse mix:
-- 3-4 highly selective (acceptance rate < 20%)
-- 5-6 moderately selective (20-50%)
-- 5-6 accessible options (> 50%)
-
-Return ONLY valid JSON matching this exact schema:
-{{
-  "universities": [
-    {{
-      "name": "Full University Name",
-      "campus_setting": "URBAN",
-      "acceptance_rate": 0.15,
-      "median_gpa": 3.9,
-      "sat_25th": 1400,
-      "sat_75th": 1550,
-      "major_strength_score": 8,
-      "need_blind_international": true,
-      "meets_full_need": true
-    }}
-  ]
-}}"""
-
-        try:
-            logger.info("Ollama standalone mode: generating simulated data...")
-            async with httpx.AsyncClient(timeout=300.0) as client:
-                response = await client.post(
-                    f"{settings.ollama_base_url}/api/generate",
-                    json={
-                        "model": settings.ollama_model,
-                        "prompt": prompt,
-                        "format": "json",
-                        "stream": False,
-                    },
-                )
-                response.raise_for_status()
-                result = response.json()
-                return self._parse_structured_response(
-                    result.get("response", ""), 
-                    major, 
-                    data_source="ollama_simulated"
-                )
-        except httpx.HTTPError as e:
-            logger.error(f"Ollama standalone failed: {e}")
-            raise RuntimeError(f"Ollama discovery failed: {e}")
     
     def _parse_structured_response(
         self,
@@ -972,7 +905,7 @@ Return ONLY valid JSON matching this exact schema:
         """
         Emergency fallback: Extract university names from raw text.
         
-        Used if both Gemini structuring and Ollama fail.
+        Used when synthesis provider (Groq/Perplexity) fails or returns 429.
         """
         # Known top universities as fallback
         known_universities = [
