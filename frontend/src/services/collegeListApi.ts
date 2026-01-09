@@ -12,6 +12,32 @@ export interface CollegeListItem {
     added_at: string;
 }
 
+/**
+ * Enriched college list item for spreadsheet view.
+ * Combines user's list data with institutional data.
+ */
+export interface CollegeListDetailedItem {
+    // User list data
+    id: string;
+    college_name: string;
+    label: 'reach' | 'target' | 'safety' | null;
+    notes: string | null;
+    added_at: string;
+    // Institutional data
+    acceptance_rate: number | null;
+    sat_25th: number | null;
+    sat_75th: number | null;
+    act_25th: number | null;
+    act_75th: number | null;
+    tuition_international: number | null;
+    need_blind_international: boolean | null;
+    meets_full_need: boolean | null;
+    city: string | null;
+    state: string | null;
+    campus_setting: string | null;
+    student_size: number | null;
+}
+
 export interface Exclusion {
     id: string;
     college_name: string;
@@ -20,7 +46,7 @@ export interface Exclusion {
 }
 
 /**
- * Get the user's saved college list
+ * Get the user's saved college list (basic)
  */
 export async function getCollegeList(token: string): Promise<CollegeListItem[]> {
     const response = await fetch(`${API_BASE}/api/college-list`, {
@@ -31,6 +57,24 @@ export async function getCollegeList(token: string): Promise<CollegeListItem[]> 
 
     if (!response.ok) {
         throw new Error('Failed to fetch college list');
+    }
+
+    return response.json();
+}
+
+/**
+ * Get the user's saved college list with full institutional data.
+ * Used for spreadsheet-like view.
+ */
+export async function getCollegeListDetailed(token: string): Promise<CollegeListDetailedItem[]> {
+    const response = await fetch(`${API_BASE}/api/college-list/detailed`, {
+        headers: {
+            'Authorization': `Bearer ${token}`,
+        },
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to fetch detailed college list');
     }
 
     return response.json();

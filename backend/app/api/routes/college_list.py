@@ -87,6 +87,34 @@ class ExclusionResponse(BaseModel):
     created_at: str
 
 
+class CollegeListDetailedResponse(BaseModel):
+    """
+    Enriched college list item for spreadsheet view.
+    
+    Combines user's list data with institutional data.
+    """
+    # User list data
+    id: UUID
+    college_name: str
+    label: Optional[str]
+    notes: Optional[str]
+    added_at: str
+    
+    # Institutional data
+    acceptance_rate: Optional[float] = None
+    sat_25th: Optional[int] = None
+    sat_75th: Optional[int] = None
+    act_25th: Optional[int] = None
+    act_75th: Optional[int] = None
+    tuition_international: Optional[float] = None
+    need_blind_international: Optional[bool] = None
+    meets_full_need: Optional[bool] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    campus_setting: Optional[str] = None
+    student_size: Optional[int] = None
+
+
 # =============================================================================
 # College List Endpoints
 # =============================================================================
@@ -110,6 +138,54 @@ async def get_college_list(
         )
         for item in items
     ]
+
+
+@router.get("/college-list/detailed", response_model=List[CollegeListDetailedResponse])
+async def get_college_list_detailed(
+    user_id: UUID = Depends(get_current_user_id),
+    session = Depends(get_session),
+):
+    """
+    Get user's college list with full institutional data.
+    
+    Returns enriched data for spreadsheet-like view including:
+    - Acceptance rate, SAT/ACT scores
+    - Tuition (international)
+    - Financial aid policies (need-blind, meets full need)
+    - Location (city, state, campus setting)
+    
+    Data is fetched from local cache with Scorecard API fallback.
+    """
+    from app.infrastructure.services.college_list_enrichment_service import (
+        CollegeListEnrichmentService,
+    )
+    
+    service = CollegeListEnrichmentService(session)
+    enriched_items = await service.get_enriched_list(user_id)
+    
+    return [
+        CollegeListDetailedResponse(
+            id=item.id,
+            college_name=item.college_name,
+            label=item.label,
+            notes=item.notes,
+            added_at=item.added_at,
+            acceptance_rate=item.acceptance_rate,
+            sat_25th=item.sat_25th,
+            sat_75th=item.sat_75th,
+            act_25th=item.act_25th,
+            act_75th=item.act_75th,
+            tuition_international=item.tuition_international,
+            need_blind_international=item.need_blind_international,
+            meets_full_need=item.meets_full_need,
+            city=item.city,
+            state=item.state,
+            campus_setting=item.campus_setting,
+            student_size=item.student_size,
+        )
+        for item in enriched_items
+    ]
+
 
 
 @router.post("/college-list", response_model=CollegeListItemResponse, status_code=status.HTTP_201_CREATED)

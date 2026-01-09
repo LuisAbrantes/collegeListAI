@@ -2,9 +2,10 @@
  * MyList Component - User's saved college list
  * 
  * Features:
- * - Display colleges organized by category
+ * - Spreadsheet-like table view with enriched data
  * - Search and add universities from database
- * - Fallback to AI search for unknown universities
+ * - Inline notes editing
+ * - Sortable columns
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -14,7 +15,6 @@ import {
   ListChecks, 
   ChevronDown, 
   ChevronUp, 
-  Trash2, 
   RefreshCw,
   Search,
   Plus,
@@ -22,16 +22,14 @@ import {
   Sparkles
 } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import { CollegeListTable } from './CollegeListTable';
+import type { CollegeListDetailedItem } from '../services/collegeListApi';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-interface CollegeListItem {
-  id: string;
-  college_name: string;
-  label: 'reach' | 'target' | 'safety' | null;
-  notes: string | null;
-  added_at: string;
-}
+// =============================================================================
+// Types
+// =============================================================================
 
 interface Exclusion {
   id: string;
@@ -54,8 +52,13 @@ interface MyListProps {
   className?: string;
 }
 
+// =============================================================================
+// Component
+// =============================================================================
+
 export function MyList({ className = '' }: MyListProps) {
-  const [colleges, setColleges] = useState<CollegeListItem[]>([]);
+  // Data state
+  const [colleges, setColleges] = useState<CollegeListDetailedItem[]>([]);
   const [exclusions, setExclusions] = useState<Exclusion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -66,8 +69,12 @@ export function MyList({ className = '' }: MyListProps) {
   const [searchResults, setSearchResults] = useState<CollegeSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
-  const [selectedLabel, setSelectedLabel] = useState<'reach' | 'target' | 'safety' | null>(null); // null = auto-calculate
+  const [selectedLabel, setSelectedLabel] = useState<'reach' | 'target' | 'safety' | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
+
+  // ---------------------------------------------------------------------------
+  // Data Fetching
+  // ---------------------------------------------------------------------------
 
   const fetchData = useCallback(async () => {
     try {
@@ -80,16 +87,20 @@ export function MyList({ className = '' }: MyListProps) {
         return;
       }
 
-      // Fetch college list
-      const { data: listData, error: listError } = await supabase
-        .from('user_college_list')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('added_at', { ascending: false });
+      // Fetch enriched college list from API
+      const collegeResponse = await fetch(`${API_BASE}/api/college-list/detailed`, {
+        headers: {
+          'Authorization': `Bearer ${user.id}`,
+        },
+      });
+      
+      if (!collegeResponse.ok) {
+        throw new Error('Failed to fetch college list');
+      }
+      
+      const listData = await collegeResponse.json();
 
-      if (listError) throw listError;
-
-      // Fetch exclusions
+      // Fetch exclusions from Supabase directly
       const { data: exclusionData, error: exclusionError } = await supabase
         .from('user_exclusions')
         .select('*')
@@ -111,6 +122,10 @@ export function MyList({ className = '' }: MyListProps) {
     fetchData();
   }, [fetchData]);
 
+  // ---------------------------------------------------------------------------
+  // Actions
+  // ---------------------------------------------------------------------------
+
   const handleRemove = async (collegeName: string) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -129,6 +144,29 @@ export function MyList({ className = '' }: MyListProps) {
       ));
     } catch (err) {
       console.error('Failed to remove:', err);
+    }
+  };
+
+  const handleUpdateNotes = async (collegeName: string, notes: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase
+        .from('user_college_list')
+        .update({ notes })
+        .eq('user_id', user.id)
+        .ilike('college_name', collegeName);
+
+      if (error) throw error;
+      
+      setColleges(prev => prev.map(c => 
+        c.college_name.toLowerCase() === collegeName.toLowerCase()
+          ? { ...c, notes }
+          : c
+      ));
+    } catch (err) {
+      console.error('Failed to update notes:', err);
     }
   };
 
@@ -153,7 +191,10 @@ export function MyList({ className = '' }: MyListProps) {
     }
   };
 
-  // Search functions
+  // ---------------------------------------------------------------------------
+  // Search
+  // ---------------------------------------------------------------------------
+
   const searchColleges = useCallback(async (query: string) => {
     if (query.length < 2) {
       setSearchResults([]);
@@ -216,22 +257,15 @@ export function MyList({ className = '' }: MyListProps) {
         },
         body: JSON.stringify({
           college_name: collegeName,
-          label: selectedLabel, // null = auto-calculate, otherwise user's choice
+          label: selectedLabel,
         }),
       });
 
       if (!response.ok) throw new Error('Failed to add college');
       
-      const data = await response.json();
+      // Refetch to get enriched data
+      await fetchData();
       
-      // Convert API response to match local state format
-      setColleges(prev => [{
-        id: data.id,
-        college_name: data.college_name,
-        label: data.label,
-        notes: data.notes,
-        added_at: data.added_at,
-      }, ...prev]);
       setSearchQuery('');
       setShowResults(false);
     } catch (err) {
@@ -239,20 +273,9 @@ export function MyList({ className = '' }: MyListProps) {
     }
   };
 
-  // Group colleges by label
-  const grouped = {
-    reach: colleges.filter(c => c.label === 'reach'),
-    target: colleges.filter(c => c.label === 'target'),
-    safety: colleges.filter(c => c.label === 'safety'),
-    uncategorized: colleges.filter(c => !c.label),
-  };
-
-  const labelColors = {
-    reach: 'border-l-reach text-reach',
-    target: 'border-l-target text-target',
-    safety: 'border-l-safety text-safety',
-    uncategorized: 'border-l-zinc-500 text-zinc-400',
-  };
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
 
   if (loading) {
     return (
@@ -278,7 +301,7 @@ export function MyList({ className = '' }: MyListProps) {
   }
 
   return (
-    <div className={`max-w-4xl mx-auto px-4 py-8 ${className}`}>
+    <div className={`max-w-6xl mx-auto px-4 py-8 ${className}`}>
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <ListChecks className="w-8 h-8 text-zinc-400" />
@@ -364,10 +387,7 @@ export function MyList({ className = '' }: MyListProps) {
                 <div className="p-4">
                   <p className="text-sm text-zinc-500 mb-3">No universities found in database</p>
                   <button
-                    onClick={() => {
-                      // For now, just add with the typed name
-                      handleAddCollege(searchQuery);
-                    }}
+                    onClick={() => handleAddCollege(searchQuery)}
                     className="flex items-center gap-2 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm text-zinc-300"
                   >
                     <Sparkles className="w-4 h-4" />
@@ -381,7 +401,7 @@ export function MyList({ className = '' }: MyListProps) {
       </div>
 
       {/* Empty State */}
-      {colleges.length === 0 && (
+      {colleges.length === 0 ? (
         <motion.div 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -390,59 +410,19 @@ export function MyList({ className = '' }: MyListProps) {
           <ListChecks className="w-16 h-16 mx-auto mb-4 text-zinc-600" />
           <h3 className="text-xl font-semibold text-zinc-300 mb-2">No colleges saved yet</h3>
           <p className="text-zinc-500 mb-6">
-            Start building your list by asking the advisor for recommendations
+            Start building your list by searching above
             <br />
-            or saying "add [school name] to my list"
+            or asking the advisor for recommendations
           </p>
         </motion.div>
+      ) : (
+        /* College Table */
+        <CollegeListTable 
+          colleges={colleges}
+          onRemove={handleRemove}
+          onUpdateNotes={handleUpdateNotes}
+        />
       )}
-
-      {/* Grouped Lists */}
-      {(['reach', 'target', 'safety', 'uncategorized'] as const).map((category) => {
-        const items = grouped[category];
-        if (items.length === 0) return null;
-
-        return (
-          <div key={category} className="mb-8">
-            <h2 className={`text-lg font-semibold mb-4 capitalize ${labelColors[category].split(' ')[1]}`}>
-              {category === 'uncategorized' ? 'Unsorted' : `${category} Schools`}
-              <span className="text-zinc-500 font-normal ml-2">({items.length})</span>
-            </h2>
-            
-            <div className="space-y-3">
-              <AnimatePresence mode="popLayout">
-                {items.map((college) => (
-                  <motion.div
-                    key={college.id}
-                    layout
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 20, height: 0 }}
-                    className={`glass-card p-4 border-l-2 ${labelColors[category].split(' ')[0]} flex items-center justify-between`}
-                  >
-                    <div>
-                      <h3 className="font-medium text-zinc-100">{college.college_name}</h3>
-                      {college.notes && (
-                        <p className="text-sm text-zinc-400 mt-1">{college.notes}</p>
-                      )}
-                      <p className="text-xs text-zinc-500 mt-1">
-                        Added {new Date(college.added_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => handleRemove(college.college_name)}
-                      className="p-2 text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded-lg transition-colors"
-                      title="Remove from list"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-          </div>
-        );
-      })}
 
       {/* Exclusions Section */}
       {exclusions.length > 0 && (
@@ -491,4 +471,3 @@ export function MyList({ className = '' }: MyListProps) {
     </div>
   );
 }
-
