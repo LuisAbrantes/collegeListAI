@@ -260,7 +260,9 @@ class CollegeListEnrichmentService:
         """
         Apply known financial aid policies from curated database.
         
-        Only overwrites if current value is None (respects cache data).
+        The curated database is the authoritative source for international
+        student financial aid policies. These are manually verified from
+        official university websites and take precedence over cached data.
         """
         name_lower = enriched.college_name.lower().strip()
         
@@ -276,12 +278,9 @@ class CollegeListEnrichmentService:
         
         if policy:
             need_blind, meets_need = policy
-            
-            # Only apply if not already set
-            if enriched.need_blind_international is None:
-                enriched.need_blind_international = need_blind
-            if enriched.meets_full_need is None:
-                enriched.meets_full_need = meets_need
+            # Always apply curated data - it's the authoritative source
+            enriched.need_blind_international = need_blind
+            enriched.meets_full_need = meets_need
     
     async def _enrich_from_scorecard(
         self, 
