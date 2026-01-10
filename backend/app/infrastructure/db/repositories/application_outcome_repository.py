@@ -4,7 +4,7 @@ Application Outcome Repository
 Extends BaseRepository with outcome-specific queries for ML training.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 
@@ -76,7 +76,7 @@ class ApplicationOutcomeRepository(
         if existing:
             existing.outcome_status = data.outcome_status
             existing.submitted_at = data.submitted_at
-            existing.updated_at = datetime.utcnow()
+            existing.updated_at = datetime.now(timezone.utc)
             self._session.add(existing)
             await self._session.flush()
             await self._session.refresh(existing)

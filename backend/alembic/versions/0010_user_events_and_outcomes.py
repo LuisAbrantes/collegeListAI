@@ -25,7 +25,7 @@ def upgrade() -> None:
         sa.Column('user_id', UUID(as_uuid=True), sa.ForeignKey('profiles.id', ondelete='CASCADE'), nullable=False),
         sa.Column('event_type', sa.String(50), nullable=False),
         sa.Column('college_name', sa.String(255), nullable=True),
-        sa.Column('metadata', JSONB, server_default='{}'),
+        sa.Column('event_data', JSONB, server_default='{}'),
         sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('NOW()'), nullable=False),
     )
     

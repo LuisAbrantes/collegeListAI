@@ -4,7 +4,7 @@ Application Outcome Model
 Tracks real admission results to validate and improve predictions.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 from uuid import UUID, uuid4
@@ -45,7 +45,7 @@ class ApplicationOutcomeBase(SQLModel):
     cycle_year: int = Field(
         ...,
         ge=2020,
-        le=2030,
+        le=2035,  # Extended to avoid hardcoded limit issue
         description="Admission cycle year"
     )
     
@@ -73,12 +73,12 @@ class ApplicationOutcome(ApplicationOutcomeBase, table=True):
     )
     
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When this record was created"
     )
     
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When this record was last updated"
     )
 

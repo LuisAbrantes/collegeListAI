@@ -4,7 +4,7 @@ User Event Repository
 Extends BaseRepository with event-specific queries.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict
 from uuid import UUID
 
@@ -76,7 +76,7 @@ class UserEventRepository(BaseRepository[UserEvent, UserEventCreate, UserEventCr
         limit: int = 1000
     ) -> List[UserEvent]:
         """Get recent events across all users (for analytics)."""
-        since = datetime.utcnow() - timedelta(hours=hours)
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
         stmt = (
             select(UserEvent)
             .where(UserEvent.created_at >= since)

@@ -104,14 +104,20 @@ async def track_search(
     session: AsyncSession = Depends(get_session),
 ):
     """Track a search event."""
-    service = AnalyticsService(session)
-    await service.track_search(
-        user_id=user_id,
-        query=request.query,
-        results_count=request.results_count,
-        major=request.major,
-    )
-    await session.commit()
+    try:
+        service = AnalyticsService(session)
+        await service.track_search(
+            user_id=user_id,
+            query=request.query,
+            results_count=request.results_count,
+            major=request.major,
+        )
+        await session.commit()
+    except Exception as e:
+        logger.error(f"Failed to track search event: {e}")
+        await session.rollback()
+        # Analytics should not block user experience - fail silently
+        return
 
 
 @router.post("/track/view", status_code=status.HTTP_204_NO_CONTENT)
@@ -121,14 +127,18 @@ async def track_view(
     session: AsyncSession = Depends(get_session),
 ):
     """Track when user views a recommendation."""
-    service = AnalyticsService(session)
-    await service.track_recommendation_view(
-        user_id=user_id,
-        college_name=request.college_name,
-        position=request.position,
-        label=request.label,
-    )
-    await session.commit()
+    try:
+        service = AnalyticsService(session)
+        await service.track_recommendation_view(
+            user_id=user_id,
+            college_name=request.college_name,
+            position=request.position,
+            label=request.label,
+        )
+        await session.commit()
+    except Exception as e:
+        logger.error(f"Failed to track view event: {e}")
+        await session.rollback()
 
 
 @router.post("/track/add", status_code=status.HTTP_204_NO_CONTENT)
@@ -138,13 +148,17 @@ async def track_list_add(
     session: AsyncSession = Depends(get_session),
 ):
     """Track when user adds a college to their list."""
-    service = AnalyticsService(session)
-    await service.track_list_add(
-        user_id=user_id,
-        college_name=request.college_name,
-        label=request.label,
-    )
-    await session.commit()
+    try:
+        service = AnalyticsService(session)
+        await service.track_list_add(
+            user_id=user_id,
+            college_name=request.college_name,
+            label=request.label,
+        )
+        await session.commit()
+    except Exception as e:
+        logger.error(f"Failed to track add event: {e}")
+        await session.rollback()
 
 
 @router.post("/track/reject", status_code=status.HTTP_204_NO_CONTENT)
@@ -154,13 +168,17 @@ async def track_rejection(
     session: AsyncSession = Depends(get_session),
 ):
     """Track when user rejects a recommendation."""
-    service = AnalyticsService(session)
-    await service.track_rejection(
-        user_id=user_id,
-        college_name=request.college_name,
-        reason=request.reason,
-    )
-    await session.commit()
+    try:
+        service = AnalyticsService(session)
+        await service.track_rejection(
+            user_id=user_id,
+            college_name=request.college_name,
+            reason=request.reason,
+        )
+        await session.commit()
+    except Exception as e:
+        logger.error(f"Failed to track rejection event: {e}")
+        await session.rollback()
 
 
 # =============================================================================

@@ -6,6 +6,7 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
 import { supabase } from '../services/supabase';
+import { trackSearch } from '../services/analyticsApi';
 import type { CollegeRecommendation } from '../types/api';
 
 // Types
@@ -268,6 +269,12 @@ export function ChatProvider({ children }: ChatProviderProps) {
 
       if (fullContent) await saveMessage(currentThreadId, 'assistant', fullContent);
       await loadThreads();
+      
+      // Fire-and-forget analytics tracking
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        trackSearch(user.id, query, 1, profile.major);
+      }
     } catch (e) {
       setError((e as Error).message);
       setMessages(prev => prev.filter(m => m.id !== assistantMessage.id));

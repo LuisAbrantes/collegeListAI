@@ -4,9 +4,9 @@ User Event Model for Analytics
 Tracks user behavior for data flywheel optimization.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional, Any
+from typing import Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import Column, String
@@ -54,7 +54,6 @@ class UserEvent(SQLModel, table=True):
         description="College associated with event (if applicable)"
     )
     
-    # Renamed from 'metadata' to 'event_data' to avoid SQLModel conflict
     event_data: Optional[dict] = Field(
         default=None,
         sa_column=Column(JSONB, default={}),
@@ -62,7 +61,7 @@ class UserEvent(SQLModel, table=True):
     )
     
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="When this event occurred"
     )
 
