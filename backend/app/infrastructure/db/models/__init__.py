@@ -25,6 +25,17 @@ from app.infrastructure.db.models.college import (
 )
 from app.infrastructure.db.models.chat_thread import ChatThread
 from app.infrastructure.db.models.chat_message import ChatMessage
+from app.infrastructure.db.models.user_event import (
+    UserEvent,
+    UserEventCreate,
+    UserEventType,
+)
+from app.infrastructure.db.models.application_outcome import (
+    ApplicationOutcome,
+    ApplicationOutcomeCreate,
+    ApplicationOutcomeUpdate,
+    OutcomeStatus,
+)
 
 
 __all__ = [
@@ -46,5 +57,13 @@ __all__ = [
     # Chat
     "ChatThread",
     "ChatMessage",
+    # Analytics
+    "UserEvent",
+    "UserEventCreate",
+    "UserEventType",
+    "ApplicationOutcome",
+    "ApplicationOutcomeCreate",
+    "ApplicationOutcomeUpdate",
+    "OutcomeStatus",
 ]
 

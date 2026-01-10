@@ -150,7 +150,7 @@ async def root():
 # Import and register routers
 # ============================================================================
 
-from app.api.routes import profiles, search, chats, college_list, colleges, admin
+from app.api.routes import profiles, search, chats, college_list, colleges, admin, analytics
 
 app.include_router(profiles.router, prefix="/api", tags=["Profiles"])
 app.include_router(search.router, prefix="/api", tags=["Search & Recommendations"])
@@ -158,4 +158,5 @@ app.include_router(chats.router, prefix="/api", tags=["Chats"])
 app.include_router(college_list.router, tags=["College List"])
 app.include_router(colleges.router, tags=["Colleges"])
 app.include_router(admin.router, tags=["Admin"])
+app.include_router(analytics.router, tags=["Analytics"])
 
