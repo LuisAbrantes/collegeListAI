@@ -2,10 +2,14 @@
 Admin Routes for Database Maintenance
 
 Includes deduplication endpoint for cleaning university records.
+Protected by API key authentication.
 """
 
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+import os
+import secrets
+
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel
 
 from app.infrastructure.db.database import get_session
@@ -13,7 +17,46 @@ from app.infrastructure.services.deduplication_service import UniversityDeduplic
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+# =============================================================================
+# Admin API Key Authentication
+# =============================================================================
+
+async def verify_admin_api_key(
+    x_admin_key: str = Header(..., description="Admin API key for protected operations")
+) -> bool:
+    """
+    Verify admin API key from header.
+    
+    The admin key should be set in environment variable ADMIN_API_KEY.
+    """
+    from app.config.settings import settings
+    
+    expected_key = settings.admin_api_key
+    
+    if not expected_key:
+        logger.error("ADMIN_API_KEY environment variable not set")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Admin authentication not configured"
+        )
+    
+    # Use secrets.compare_digest for timing-attack resistance
+    if not secrets.compare_digest(x_admin_key, expected_key):
+        logger.warning("Invalid admin API key attempt")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid admin API key"
+        )
+    
+    return True
+
+
+router = APIRouter(
+    prefix="/api/admin",
+    tags=["admin"],
+    dependencies=[Depends(verify_admin_api_key)]  # Protect ALL admin routes
+)
 
 
 class DeduplicationResult(BaseModel):

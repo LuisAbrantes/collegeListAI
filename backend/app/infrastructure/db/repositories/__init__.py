@@ -19,6 +19,12 @@ from app.infrastructure.db.repositories.college_repository import (
 from app.infrastructure.db.repositories.chat_repository import (
     ChatRepository,
 )
+from app.infrastructure.db.repositories.user_event_repository import (
+    UserEventRepository,
+)
+from app.infrastructure.db.repositories.application_outcome_repository import (
+    ApplicationOutcomeRepository,
+)
 
 
 __all__ = [
@@ -31,4 +37,6 @@ __all__ = [
     "CollegeRepository",
     "CollegeMajorStatsRepository",
     "ChatRepository",
+    "UserEventRepository",
+    "ApplicationOutcomeRepository",
 ]

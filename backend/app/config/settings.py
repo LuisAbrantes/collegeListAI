@@ -55,7 +55,12 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "http://localhost:3000",
         "http://127.0.0.1:5173",
+        # Add your production URL here:
+        # "https://your-app.vercel.app",
     ]
+    
+    # Admin API Key (for protected admin endpoints)
+    admin_api_key: Optional[str] = None
     
     # AI/Search Configuration
     search_grounding_enabled: bool = True

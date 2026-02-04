@@ -2,6 +2,8 @@
  * API service for College List and Exclusions
  */
 
+import { trackListAdd, trackRejection } from './analyticsApi';
+
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export interface CollegeListItem {
@@ -106,7 +108,12 @@ export async function addToCollegeList(
         throw new Error('Failed to add college to list');
     }
 
-    return response.json();
+    const result = await response.json();
+
+    // Fire-and-forget analytics tracking
+    trackListAdd(token, collegeName, label);
+
+    return result;
 }
 
 /**
@@ -172,7 +179,12 @@ export async function excludeCollege(
         throw new Error('Failed to exclude college');
     }
 
-    return response.json();
+    const result = await response.json();
+
+    // Fire-and-forget analytics tracking
+    trackRejection(token, collegeName, reason);
+
+    return result;
 }
 
 /**
