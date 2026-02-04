@@ -57,7 +57,7 @@ export function useAuth(): UseAuthReturn {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
+    setState(prev => ({ ...prev, error: null }));
     
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -65,30 +65,34 @@ export function useAuth(): UseAuthReturn {
     });
 
     if (error) {
-      setState(prev => ({ ...prev, loading: false, error }));
+      setState(prev => ({ ...prev, error }));
     }
   }, []);
 
   const signUp = useCallback(async (email: string, password: string) => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
+    setState(prev => ({ ...prev, error: null }));
     
-    const { error } = await supabase.auth.signUp({
+    const { error, data } = await supabase.auth.signUp({
       email,
       password,
     });
 
     if (error) {
-      setState(prev => ({ ...prev, loading: false, error }));
+      setState(prev => ({ ...prev, error }));
+    } else if (data.user && !data.session) {
+      // Email confirmation required
+      setState(prev => ({ 
+        ...prev, 
+        error: { message: 'Check your email to confirm your account', name: 'info' } as any 
+      }));
     }
   }, []);
 
   const signOut = useCallback(async () => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
-    
     const { error } = await supabase.auth.signOut();
     
     if (error) {
-      setState(prev => ({ ...prev, loading: false, error }));
+      setState(prev => ({ ...prev, error }));
     }
   }, []);
 

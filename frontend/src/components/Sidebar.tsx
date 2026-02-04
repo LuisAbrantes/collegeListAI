@@ -18,7 +18,7 @@ export function Sidebar({ userProfile, onSignOut }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const isActive = (path: string) => location.pathname === path;
-  const isHome = location.pathname === '/';
+  const isHome = location.pathname === '/app';
 
   const { threads, threadId, isLoadingThreads, newChat, loadThread, deleteThread } = useChatContext();
 
@@ -39,7 +39,7 @@ export function Sidebar({ userProfile, onSignOut }: SidebarProps) {
 
   const handleNewChat = () => {
     newChat();
-    navigate('/chat');
+    navigate('/app/chat');
   };
 
   return (
@@ -52,7 +52,7 @@ export function Sidebar({ userProfile, onSignOut }: SidebarProps) {
       {/* Navigation */}
       <nav className="px-3 space-y-1">
         <Link
-          to="/"
+          to="/app"
           className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors no-underline ${
             isHome ? 'bg-white/10 text-white font-medium' : 'text-zinc-400 hover:text-white hover:bg-white/5'
           }`}
@@ -68,18 +68,18 @@ export function Sidebar({ userProfile, onSignOut }: SidebarProps) {
           New Chat
         </button>
         <Link
-          to="/my-list"
+          to="/app/my-list"
           className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors no-underline ${
-            isActive('/my-list') ? 'bg-white/10 text-white font-medium' : 'text-zinc-400 hover:text-white hover:bg-white/5'
+            isActive('/app/my-list') ? 'bg-white/10 text-white font-medium' : 'text-zinc-400 hover:text-white hover:bg-white/5'
           }`}
         >
           <ListChecks size={18} />
           My College List
         </Link>
         <Link
-          to="/profile"
+          to="/app/profile"
           className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors no-underline ${
-            isActive('/profile') ? 'bg-white/10 text-white font-medium' : 'text-zinc-400 hover:text-white hover:bg-white/5'
+            isActive('/app/profile') ? 'bg-white/10 text-white font-medium' : 'text-zinc-400 hover:text-white hover:bg-white/5'
           }`}
         >
           <User size={18} />
