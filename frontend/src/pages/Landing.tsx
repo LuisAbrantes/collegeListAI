@@ -430,19 +430,19 @@ export function Landing() {
                             },
                             {
                                 name: 'University of Michigan',
-                                logo: 'https://upload.wikimedia.org/wikipedia/commons/9/93/Seal_of_the_University_of_Michigan.svg'
+                                logo: 'https://upload.wikimedia.org/wikipedia/commons/3/36/Michigan_Wolverines_Block_M.png'
                             },
                             {
                                 name: 'University of Miami',
-                                logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/17/University_of_Miami_logo.svg/800px-University_of_Miami_logo.svg.png'
+                                logo: 'https://images.seeklogo.com/logo-png/21/2/university-of-miami-logo-png_seeklogo-211487.png'
                             },
                             {
                                 name: 'Brandeis University',
-                                logo: 'https://upload.wikimedia.org/wikipedia/en/thumb/5/58/Brandeis_University_seal.svg/800px-Brandeis_University_seal.svg.png'
+                                logo: 'https://upload.wikimedia.org/wikipedia/en/3/32/Brandeis_University_seal.svg'
                             },
                             {
                                 name: 'Columbia University',
-                                logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0e/Columbia_University_Shield.svg/800px-Columbia_University_Shield.svg.png'
+                                logo: 'https://pluspng.com/img-png/columbia-university-logo-png--1200.png'
                             },
                             {
                                 name: 'Duke University',
@@ -450,11 +450,11 @@ export function Landing() {
                             },
                             {
                                 name: 'Northwestern University',
-                                logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d9/Northwestern_University_seal.svg/800px-Northwestern_University_seal.svg.png'
+                                logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Northwestern_University_seal.svg/250px-Northwestern_University_seal.svg.png'
                             },
                             {
                                 name: 'USC',
-                                logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b7/University_of_Southern_California_seal.svg/800px-University_of_Southern_California_seal.svg.png'
+                                logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/94/USC_Trojans_logo.svg/960px-USC_Trojans_logo.svg.png'
                             },
                             {
                                 name: 'Boston University',
@@ -466,7 +466,7 @@ export function Landing() {
                             },
                             {
                                 name: 'Dartmouth College',
-                                logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Dartmouth_College_shield.svg/800px-Dartmouth_College_shield.svg.png'
+                                logo: 'https://upload.wikimedia.org/wikipedia/en/e/e4/Dartmouth_College_shield.svg'
                             }
                         ].map((school, index) => (
                             <motion.div
