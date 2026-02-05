@@ -1,379 +1,660 @@
 /**
- * College List AI - Landing Page
+ * Landing Page - College List AI
+ *
+ * Modern, minimalist landing page showcasing the AI-powered
+ * college list advisor for international students.
  */
 
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-    ArrowRight,
-    Sparkles,
-    Target,
-    ShieldCheck,
     GraduationCap,
-    LineChart,
-    Compass,
-    ListTodo,
-    Users
+    Search,
+    Target,
+    Shield,
+    TrendingUp,
+    Globe,
+    Sparkles,
+    Brain,
+    DollarSign,
+    ArrowRight,
+    CheckCircle,
+    MessageSquare,
+    ListChecks,
+    Star
 } from 'lucide-react';
 
-const fadeUp = {
-    initial: { opacity: 0, y: 18 },
-    animate: { opacity: 1, y: 0 }
-};
-
 export function Landing() {
+    const fadeInUp = {
+        initial: { opacity: 0, y: 30 },
+        animate: { opacity: 1, y: 0 },
+        transition: { duration: 0.6, ease: [0.16, 1, 0.3, 1] }
+    };
+
+    const stagger = {
+        animate: {
+            transition: {
+                staggerChildren: 0.1
+            }
+        }
+    };
+
+    const features = [
+        {
+            icon: Brain,
+            title: 'AI-Powered Recommendations',
+            description:
+                'Get personalized college suggestions based on your GPA, test scores, major, and preferences using advanced AI.',
+            color: 'text-purple-400'
+        },
+        {
+            icon: Target,
+            title: 'Reach / Target / Safety',
+            description:
+                'Every school is categorized based on your admission probability, helping you build a balanced list.',
+            color: 'text-target'
+        },
+        {
+            icon: Globe,
+            title: 'Domestic & International Support',
+            description:
+                'Full support for both domestic and international students with nationality-aware financial aid insights.',
+            color: 'text-cyan-400'
+        },
+        {
+            icon: DollarSign,
+            title: 'Financial Aid Insights',
+            description:
+                'Discover merit scholarships, need-based aid, and schools with the best financial support for your situation.',
+            color: 'text-safety'
+        },
+        {
+            icon: Search,
+            title: 'Real-Time Data',
+            description:
+                'Access up-to-date 2025-2026 deadlines, acceptance rates, and program-specific information.',
+            color: 'text-reach'
+        },
+        {
+            icon: ListChecks,
+            title: 'Smart College List',
+            description:
+                'Save schools, track applications, and manage your entire college journey in one place.',
+            color: 'text-emerald-400'
+        }
+    ];
+
+    const howItWorks = [
+        {
+            step: '01',
+            title: 'Create Your Profile',
+            description:
+                'Enter your GPA, test scores, nationality, intended major, and financial situation.'
+        },
+        {
+            step: '02',
+            title: 'Chat with AI Advisor',
+            description:
+                'Ask for recommendations, explore schools, and get personalized advice through natural conversation.'
+        },
+        {
+            step: '03',
+            title: 'Build Your List',
+            description:
+                'Save schools to your college list with reach, target, and safety categorization.'
+        }
+    ];
+
+    const stats = [
+        { value: '3,000+', label: 'Universities' },
+        { value: 'Real-Time', label: 'Data Updates' },
+        { value: '50+', label: 'Countries Supported' },
+        { value: 'Free', label: 'To Get Started' }
+    ];
+
+    const testimonials = [];
+
     return (
-        <div className="min-h-screen bg-zinc-950 text-zinc-100">
-            <div className="relative overflow-hidden">
-                <div className="absolute inset-0">
-                    <div className="absolute -top-40 -left-40 h-96 w-96 rounded-full bg-reach/15 blur-[120px]" />
-                    <div className="absolute top-10 right-0 h-[28rem] w-[28rem] rounded-full bg-target/10 blur-[140px]" />
-                    <div className="absolute bottom-0 left-1/3 h-80 w-80 rounded-full bg-safety/10 blur-[120px]" />
-                </div>
-
-                <header className="relative z-10 flex items-center justify-between px-6 py-6 md:px-12">
-                    <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 border border-white/10">
-                            <Sparkles className="h-5 w-5 text-zinc-200" />
-                        </div>
-                        <div>
-                            <p className="text-sm uppercase tracking-[0.2em] text-zinc-400">
-                                College List AI
-                            </p>
-                            <p className="text-base font-semibold text-zinc-100">
-                                Lista inteligente de faculdades
-                            </p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-4 text-sm">
-                        <a className="hidden md:block text-zinc-400 hover:text-white transition-colors" href="#como-funciona">
-                            Como funciona
-                        </a>
-                        <a className="hidden md:block text-zinc-400 hover:text-white transition-colors" href="#diferenciais">
-                            Diferenciais
-                        </a>
-                        <a className="hidden md:block text-zinc-400 hover:text-white transition-colors" href="#faq">
-                            FAQ
-                        </a>
-                        <Link
-                            to="/app/login"
-                            className="px-4 py-2 rounded-full border border-white/10 bg-white/5 text-zinc-100 hover:bg-white/10 transition"
-                        >
-                            Entrar
-                        </Link>
-                    </div>
-                </header>
-
-                <main className="relative z-10 px-6 pb-16 pt-8 md:px-12 md:pt-16">
-                    <div className="grid items-center gap-12 lg:grid-cols-[1.1fr,0.9fr]">
-                        <motion.div
-                            initial={fadeUp.initial}
-                            animate={fadeUp.animate}
-                            transition={{ duration: 0.6 }}
-                        >
-                            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs uppercase tracking-[0.2em] text-zinc-300">
-                                <span className="h-2 w-2 rounded-full bg-safety" />
-                                Analise real do seu perfil
-                            </div>
-                            <h1 className="mt-6 text-4xl font-semibold leading-tight text-white md:text-6xl">
-                                Monte sua lista com clareza, foco e contexto.
-                            </h1>
-                            <p className="mt-6 max-w-xl text-lg text-zinc-300">
-                                O College List AI organiza seu perfil, seus objetivos e suas restricoes
-                                para construir uma estrategia de candidatura mais segura. Sem promessas
-                                irreais, com transparencia e criterios claros.
-                            </p>
-                            <div className="mt-8 flex flex-wrap items-center gap-4">
-                                <Link
-                                    to="/app/login"
-                                    className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-200"
-                                >
-                                    Comecar agora
-                                    <ArrowRight className="h-4 w-4" />
-                                </Link>
-                                <a
-                                    href="#como-funciona"
-                                    className="inline-flex items-center gap-2 rounded-full border border-white/10 px-6 py-3 text-sm text-zinc-200 hover:bg-white/5 transition"
-                                >
-                                    Ver metodologia
-                                </a>
-                            </div>
-                            <div className="mt-8 grid gap-4 sm:grid-cols-3">
-                                {[
-                                    { label: 'Perfil mapeado', value: 'Academico e financeiro' },
-                                    { label: 'Lista balanceada', value: 'Alcance, alvo e seguranca' },
-                                    { label: 'Plano de acao', value: 'Tarefas priorizadas' }
-                                ].map((item) => (
-                                    <div
-                                        key={item.label}
-                                        className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4"
-                                    >
-                                        <p className="text-sm text-zinc-400">{item.label}</p>
-                                        <p className="mt-2 text-sm font-semibold text-zinc-100">
-                                            {item.value}
-                                        </p>
-                                    </div>
-                                ))}
-                            </div>
-                        </motion.div>
-
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.96 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            transition={{ duration: 0.6, delay: 0.1 }}
-                            className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/10 via-white/5 to-transparent p-6"
-                        >
-                            <div className="rounded-2xl border border-white/10 bg-zinc-950/70 p-6">
-                                <div className="flex items-center justify-between">
-                                    <p className="text-sm text-zinc-400">Resumo do perfil</p>
-                                    <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-zinc-300">
-                                        Atualizado agora
-                                    </span>
-                                </div>
-                                <div className="mt-6 grid gap-4">
-                                    {[{
-                                        title: 'Interesses academicos',
-                                        value: 'Ciencia de Dados, Economia'
-                                    }, {
-                                        title: 'Orcamento anual',
-                                        value: 'Definido por faixa, sem promessas'
-                                    }, {
-                                        title: 'Regioes de interesse',
-                                        value: 'Costa Leste e Mid-West'
-                                    }].map((item) => (
-                                        <div key={item.title} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-                                            <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
-                                                {item.title}
-                                            </p>
-                                            <p className="mt-2 text-sm font-medium text-zinc-100">
-                                                {item.value}
-                                            </p>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 px-4 py-4">
-                                    <div className="flex items-center gap-2">
-                                        <LineChart className="h-4 w-4 text-safety" />
-                                        <p className="text-sm font-semibold text-zinc-100">Prioridades</p>
-                                    </div>
-                                    <p className="mt-2 text-sm text-zinc-400">
-                                        A lista final depende do seu engajamento e da qualidade das informacoes fornecidas.
-                                        O assistente orienta, mas o resultado e o ritmo sao seus.
-                                    </p>
-                                </div>
-                            </div>
-                        </motion.div>
-                    </div>
-                </main>
+        <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans overflow-x-hidden">
+            {/* Background Effects */}
+            <div className="fixed inset-0 pointer-events-none">
+                <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-purple-500/5 rounded-full blur-[120px]" />
+                <div className="absolute bottom-0 right-1/4 w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-[120px]" />
             </div>
 
-            <section id="como-funciona" className="px-6 py-16 md:px-12">
-                <div className="grid gap-10 lg:grid-cols-[0.9fr,1.1fr]">
-                    <div>
-                        <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">Como funciona</p>
-                        <h2 className="mt-4 text-3xl font-semibold text-white">
-                            Um processo guiado, sem atalhos artificiais.
-                        </h2>
-                        <p className="mt-4 text-zinc-300">
-                            Em vez de prometer prazos irreais, a plataforma organiza o caminho: diagnostico,
-                            estrategia e plano de acao. Voce ve o que precisa fazer e quando.
-                        </p>
+            {/* Navigation */}
+            <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-zinc-950/80 border-b border-white/5">
+                <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+                    <Link
+                        to="/"
+                        className="flex items-center gap-2 text-white no-underline"
+                    >
+                        <GraduationCap className="w-7 h-7" />
+                        <span className="text-lg font-semibold tracking-tight">
+                            College List AI
+                        </span>
+                    </Link>
+
+                    <div className="flex items-center gap-4">
+                        <Link
+                            to="/app/login"
+                            className="text-zinc-400 hover:text-white transition-colors no-underline text-sm"
+                        >
+                            Sign In
+                        </Link>
+                        <Link
+                            to="/app/login"
+                            className="btn-primary text-sm no-underline"
+                        >
+                            Get Started
+                        </Link>
                     </div>
-                    <div className="grid gap-4">
-                        {[{
-                            icon: <Compass className="h-5 w-5 text-target" />,
-                            title: 'Mapeamento completo',
-                            text: 'Coletamos dados reais do seu perfil academico, financeiro e pessoal.'
-                        }, {
-                            icon: <Target className="h-5 w-5 text-reach" />,
-                            title: 'Balanceamento inteligente',
-                            text: 'Distribuimos faculdades entre alcance, alvo e seguranca.'
-                        }, {
-                            icon: <ListTodo className="h-5 w-5 text-safety" />,
-                            title: 'Plano de execucao',
-                            text: 'Checklist com prioridades, prazos recomendados e foco no que importa.'
-                        }].map((item) => (
-                            <div
-                                key={item.title}
-                                className="rounded-2xl border border-white/10 bg-white/5 p-5"
+                </div>
+            </nav>
+
+            {/* Hero Section */}
+            <section className="relative pt-32 pb-20 px-6">
+                <div className="max-w-7xl mx-auto">
+                    <motion.div
+                        initial={{ opacity: 0, y: 40 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                        className="text-center max-w-4xl mx-auto"
+                    >
+                        {/* Badge */}
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: 0.2 }}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm text-zinc-400 mb-8"
+                        >
+                            <Sparkles className="w-4 h-4 text-gray-500" />
+                            <span>AI-Powered College Advisor</span>
+                        </motion.div>
+
+                        <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-[1.1] tracking-tight">
+                            <span className="bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
+                                Your AI College
+                            </span>
+                            <br />
+                            <span className="bg-gradient-to-r from-zinc-300 via-zinc-400 to-zinc-500 bg-clip-text text-transparent">
+                                Advisor
+                            </span>
+                        </h1>
+
+                        <p className="text-xl text-zinc-400 mb-10 max-w-2xl mx-auto leading-relaxed">
+                            Get personalized college recommendations that match
+                            your unique profile, goals, and the perfect
+                            university fit, powered by advanced AI technology.
+                        </p>
+
+                        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                            <Link
+                                to="/app/login"
+                                className="group flex items-center gap-2 px-8 py-4 bg-white text-zinc-950 rounded-xl font-semibold text-lg hover:bg-zinc-100 transition-all no-underline hover:scale-[1.02]"
                             >
-                                <div className="flex items-center gap-3">
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5">
-                                        {item.icon}
+                                Start Building Your List
+                                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                            </Link>
+                            <a
+                                href="#how-it-works"
+                                className="flex items-center gap-2 px-8 py-4 text-zinc-400 hover:text-white transition-colors no-underline"
+                            >
+                                See How It Works
+                            </a>
+                        </div>
+                    </motion.div>
+
+                    {/* Hero Visual - Labels Preview */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 60 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.4, duration: 0.8 }}
+                        className="mt-20 max-w-4xl mx-auto"
+                    >
+                        <div className="glass-card p-8 relative overflow-hidden">
+                            {/* Ambient glow */}
+                            <div className="absolute -top-20 -right-20 w-60 h-60 bg-target/20 rounded-full blur-[80px]" />
+                            <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-reach/20 rounded-full blur-[80px]" />
+
+                            <div className="relative">
+                                <div className="flex items-center gap-3 mb-6">
+                                    <MessageSquare className="w-5 h-5 text-zinc-500" />
+                                    <span className="text-sm text-zinc-500">
+                                        Sample Conversation
+                                    </span>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="flex justify-end">
+                                        <div className="bg-white/10 rounded-2xl rounded-br-md px-4 py-3 max-w-md">
+                                            <p className="text-sm text-zinc-200">
+                                                Give me 5 target schools for
+                                                Computer Science with good
+                                                financial aid for international
+                                                students
+                                            </p>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <p className="text-base font-semibold text-white">{item.title}</p>
-                                        <p className="mt-1 text-sm text-zinc-400">{item.text}</p>
+
+                                    <div className="flex justify-start">
+                                        <div className="bg-zinc-800/50 rounded-2xl rounded-bl-md px-4 py-3 max-w-lg">
+                                            <p className="text-sm text-zinc-300 mb-3">
+                                                Based on your profile, here are
+                                                5 target schools with excellent
+                                                CS programs and financial aid:
+                                            </p>
+
+                                            {/* College Cards Preview */}
+                                            <div className="space-y-2">
+                                                {[
+                                                    {
+                                                        name: 'University of Michigan',
+                                                        label: 'Target',
+                                                        color: 'border-target text-target'
+                                                    },
+                                                    {
+                                                        name: 'Georgia Tech',
+                                                        label: 'Target',
+                                                        color: 'border-target text-target'
+                                                    },
+                                                    {
+                                                        name: 'UC San Diego',
+                                                        label: 'Target',
+                                                        color: 'border-target text-target'
+                                                    }
+                                                ].map((school, i) => (
+                                                    <motion.div
+                                                        key={school.name}
+                                                        initial={{
+                                                            opacity: 0,
+                                                            x: -20
+                                                        }}
+                                                        animate={{
+                                                            opacity: 1,
+                                                            x: 0
+                                                        }}
+                                                        transition={{
+                                                            delay: 0.8 + i * 0.1
+                                                        }}
+                                                        className={`flex items-center justify-between p-3 bg-zinc-900/50 rounded-lg border-l-2 ${school.color.split(' ')[0]}`}
+                                                    >
+                                                        <span className="text-sm text-zinc-200">
+                                                            {school.name}
+                                                        </span>
+                                                        <span
+                                                            className={`text-[0.6rem] uppercase tracking-wider px-2 py-0.5 rounded border border-current font-mono ${school.color.split(' ')[1]}`}
+                                                        >
+                                                            {school.label}
+                                                        </span>
+                                                    </motion.div>
+                                                ))}
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </motion.div>
+                </div>
+            </section>
+
+            {/* Stats Section */}
+            <section className="py-16 px-6 border-y border-white/5">
+                <div className="max-w-7xl mx-auto">
+                    <motion.div
+                        initial="initial"
+                        whileInView="animate"
+                        viewport={{ once: true }}
+                        variants={stagger}
+                        className="grid grid-cols-2 md:grid-cols-4 gap-8"
+                    >
+                        {stats.map(stat => (
+                            <motion.div
+                                key={stat.label}
+                                variants={fadeInUp}
+                                className="text-center"
+                            >
+                                <div className="text-3xl md:text-4xl font-bold text-white mb-2">
+                                    {stat.value}
+                                </div>
+                                <div className="text-sm text-zinc-500">
+                                    {stat.label}
+                                </div>
+                            </motion.div>
+                        ))}
+                    </motion.div>
+                </div>
+            </section>
+
+            {/* Features Section */}
+            <section className="py-24 px-6">
+                <div className="max-w-7xl mx-auto">
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        className="text-center mb-16"
+                    >
+                        <h2 className="text-4xl font-bold mb-4">
+                            Everything You Need
+                        </h2>
+                        <p className="text-zinc-400 max-w-2xl mx-auto">
+                            Get comprehensive college advising with AI. Support
+                            for both domestic and international students, with
+                            specialized features for each.
+                        </p>
+                    </motion.div>
+
+                    <motion.div
+                        initial="initial"
+                        whileInView="animate"
+                        viewport={{ once: true }}
+                        variants={stagger}
+                        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+                    >
+                        {features.map(feature => (
+                            <motion.div
+                                key={feature.title}
+                                variants={fadeInUp}
+                                className="glass-card p-6 hover:bg-zinc-800/30 transition-colors group"
+                            >
+                                <feature.icon
+                                    className={`w-10 h-10 ${feature.color} mb-4 group-hover:scale-110 transition-transform`}
+                                />
+                                <h3 className="text-lg font-semibold mb-2">
+                                    {feature.title}
+                                </h3>
+                                <p className="text-sm text-zinc-400 leading-relaxed">
+                                    {feature.description}
+                                </p>
+                            </motion.div>
+                        ))}
+                    </motion.div>
+                </div>
+            </section>
+
+            {/* Labels Explanation */}
+            <section className="py-24 px-6 bg-zinc-900/30">
+                <div className="max-w-7xl mx-auto">
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        className="text-center mb-16"
+                    >
+                        <h2 className="text-4xl font-bold mb-4">
+                            Smart Categorization
+                        </h2>
+                        <p className="text-zinc-400 max-w-2xl mx-auto">
+                            Every school is labeled based on your admission
+                            probability, helping you build a balanced and
+                            strategic college list.
+                        </p>
+                    </motion.div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {[
+                            {
+                                label: 'Reach',
+                                description:
+                                    'Competitive schools where your stats are below average or acceptance rate is under 15%. Dream big!',
+                                color: 'border-reach',
+                                textColor: 'text-reach',
+                                bgColor: 'bg-reach/10',
+                                percentage: '< 15%',
+                                icon: TrendingUp
+                            },
+                            {
+                                label: 'Target',
+                                description:
+                                    "Schools where your stats align with admitted students. You're a competitive applicant.",
+                                color: 'border-target',
+                                textColor: 'text-target',
+                                bgColor: 'bg-target/10',
+                                percentage: '15-35%',
+                                icon: Target
+                            },
+                            {
+                                label: 'Safety',
+                                description:
+                                    'Schools where your stats exceed the average. High likelihood of admission.',
+                                color: 'border-safety',
+                                textColor: 'text-safety',
+                                bgColor: 'bg-safety/10',
+                                percentage: '> 35%',
+                                icon: Shield
+                            }
+                        ].map((item, i) => (
+                            <motion.div
+                                key={item.label}
+                                initial={{ opacity: 0, y: 20 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true }}
+                                transition={{ delay: i * 0.1 }}
+                                className={`glass-card p-8 border-t-2 ${item.color}`}
+                            >
+                                <div
+                                    className={`inline-flex items-center justify-center w-12 h-12 rounded-xl ${item.bgColor} mb-4`}
+                                >
+                                    <item.icon
+                                        className={`w-6 h-6 ${item.textColor}`}
+                                    />
+                                </div>
+                                <div className="flex items-center gap-3 mb-3">
+                                    <h3
+                                        className={`text-2xl font-bold ${item.textColor}`}
+                                    >
+                                        {item.label}
+                                    </h3>
+                                    <span className="text-sm text-zinc-500 font-mono">
+                                        {item.percentage}
+                                    </span>
+                                </div>
+                                <p className="text-zinc-400 text-sm leading-relaxed">
+                                    {item.description}
+                                </p>
+                            </motion.div>
                         ))}
                     </div>
                 </div>
             </section>
 
-            <section id="diferenciais" className="px-6 pb-16 md:px-12">
-                <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
-                    <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-                        <div>
-                            <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">
-                                Diferenciais
-                            </p>
-                            <h2 className="mt-4 text-3xl font-semibold text-white">
-                                O que voce recebe na pratica
+            {/* How It Works */}
+            <section id="how-it-works" className="py-24 px-6">
+                <div className="max-w-7xl mx-auto">
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        className="text-center mb-16"
+                    >
+                        <h2 className="text-4xl font-bold mb-4">
+                            How It Works
+                        </h2>
+                        <p className="text-zinc-400 max-w-2xl mx-auto">
+                            Get started in minutes. Our AI advisor guides you
+                            through the entire process.
+                        </p>
+                    </motion.div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        {howItWorks.map((item, i) => (
+                            <motion.div
+                                key={item.step}
+                                initial={{ opacity: 0, y: 20 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true }}
+                                transition={{ delay: i * 0.15 }}
+                                className="relative"
+                            >
+                                {/* Connector line */}
+                                {i < howItWorks.length - 1 && (
+                                    <div className="hidden md:block absolute top-8 left-[60%] w-[80%] h-px bg-gradient-to-r from-white/20 to-transparent" />
+                                )}
+
+                                <div className="glass-card p-8">
+                                    <span className="text-5xl font-bold text-white/10 mb-4 block">
+                                        {item.step}
+                                    </span>
+                                    <h3 className="text-xl font-semibold mb-3">
+                                        {item.title}
+                                    </h3>
+                                    <p className="text-sm text-zinc-400 leading-relaxed">
+                                        {item.description}
+                                    </p>
+                                </div>
+                            </motion.div>
+                        ))}
+                    </div>
+                </div>
+            </section>
+
+            {/* Testimonials */}
+            {/* <section className="py-24 px-6 bg-zinc-900/30">
+                <div className="max-w-7xl mx-auto">
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        className="text-center mb-16"
+                    >
+                        <h2 className="text-4xl font-bold mb-4">
+                            Loved by Students
+                        </h2>
+                        <p className="text-zinc-400 max-w-2xl mx-auto">
+                            Join thousands of students who have built their
+                            college lists with College List AI.
+                        </p>
+                    </motion.div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {testimonials.map((testimonial, i) => (
+                            <motion.div
+                                key={testimonial.author}
+                                initial={{ opacity: 0, y: 20 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true }}
+                                transition={{ delay: i * 0.1 }}
+                                className="glass-card p-6"
+                            >
+                                <div className="flex gap-1 mb-4">
+                                    {[...Array(5)].map((_, i) => (
+                                        <Star
+                                            key={i}
+                                            className="w-4 h-4 fill-yellow-500 text-yellow-500"
+                                        />
+                                    ))}
+                                </div>
+                                <p className="text-zinc-300 text-sm mb-6 leading-relaxed italic">
+                                    "{testimonial.quote}"
+                                </p>
+                                <div>
+                                    <p className="font-semibold text-white">
+                                        {testimonial.author}
+                                    </p>
+                                    <p className="text-xs text-zinc-500">
+                                        {testimonial.role}
+                                    </p>
+                                </div>
+                            </motion.div>
+                        ))}
+                    </div>
+                </div>
+            </section> */}
+
+            {/* CTA Section */}
+            <section className="py-24 px-6">
+                <div className="max-w-4xl mx-auto">
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        className="glass-card p-12 text-center relative overflow-hidden"
+                    >
+                        {/* Background effects */}
+                        <div className="absolute inset-0 bg-gradient-to-br from-target/10 via-transparent to-reach/10" />
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-purple-500/10 rounded-full blur-[100px]" />
+
+                        <div className="relative z-10">
+                            <h2 className="text-4xl font-bold mb-4">
+                                Ready to Build Your College List?
                             </h2>
-                        </div>
-                        <p className="max-w-xl text-sm text-zinc-300">
-                            Tudo focado em clareza, criterio e execucao. Nada de promessas de resultados
-                            garantidos. O sistema orienta; voce decide e executa.
-                        </p>
-                    </div>
-                    <div className="mt-8 grid gap-4 md:grid-cols-2">
-                        {[{
-                            icon: <GraduationCap className="h-5 w-5 text-zinc-100" />,
-                            title: 'Lista recomendada e explicada',
-                            text: 'Cada faculdade vem com o motivo de estar ali e o nivel de encaixe.'
-                        }, {
-                            icon: <ShieldCheck className="h-5 w-5 text-zinc-100" />,
-                            title: 'Criterios transparentes',
-                            text: 'Voce ve quais fatores pesaram mais e pode ajustar o foco.'
-                        }, {
-                            icon: <Users className="h-5 w-5 text-zinc-100" />,
-                            title: 'Simulacao de cenarios',
-                            text: 'Teste diferentes prioridades para entender o impacto na sua lista.'
-                        }, {
-                            icon: <LineChart className="h-5 w-5 text-zinc-100" />,
-                            title: 'Acompanhamento do progresso',
-                            text: 'Acompanhe tarefas e riscos sem perder o controle do cronograma.'
-                        }].map((item) => (
-                            <div key={item.title} className="rounded-2xl border border-white/10 bg-zinc-950/40 p-5">
-                                <div className="flex items-center gap-3">
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5">
-                                        {item.icon}
-                                    </div>
-                                    <div>
-                                        <p className="text-base font-semibold text-white">{item.title}</p>
-                                        <p className="mt-1 text-sm text-zinc-400">{item.text}</p>
-                                    </div>
+                            <p className="text-zinc-400 mb-8 max-w-xl mx-auto">
+                                Join thousands of international students using
+                                AI to find their perfect college match. Start
+                                free, upgrade anytime.
+                            </p>
+
+                            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                                <Link
+                                    to="/app/login"
+                                    className="group flex items-center gap-2 px-8 py-4 bg-white text-zinc-950 rounded-xl font-semibold text-lg hover:bg-zinc-100 transition-all no-underline hover:scale-[1.02]"
+                                >
+                                    Get Started Free
+                                    <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                                </Link>
+                            </div>
+
+                            <div className="flex items-center justify-center gap-6 mt-8 text-sm text-zinc-500">
+                                <div className="flex items-center gap-2">
+                                    <CheckCircle className="w-4 h-4 text-safety" />
+                                    <span>Free to start</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <CheckCircle className="w-4 h-4 text-safety" />
+                                    <span>No credit card required</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <CheckCircle className="w-4 h-4 text-safety" />
+                                    <span>Instant access</span>
                                 </div>
                             </div>
-                        ))}
-                    </div>
-                </div>
-            </section>
-
-            <section className="px-6 pb-16 md:px-12">
-                <div className="grid gap-6 lg:grid-cols-[1fr,1fr]">
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-                        <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">Para quem</p>
-                        <h3 className="mt-4 text-2xl font-semibold text-white">
-                            Feito para quem quer decisao consciente.
-                        </h3>
-                        <ul className="mt-6 space-y-3 text-sm text-zinc-300">
-                            <li className="flex items-start gap-2">
-                                <CheckMark />
-                                <span>Estudantes que precisam organizar criterios sem ruido.</span>
-                            </li>
-                            <li className="flex items-start gap-2">
-                                <CheckMark />
-                                <span>Familias que querem visualizar custo, risco e retorno.</span>
-                            </li>
-                            <li className="flex items-start gap-2">
-                                <CheckMark />
-                                <span>Orientadores que buscam uma base clara para aconselhar.</span>
-                            </li>
-                        </ul>
-                    </div>
-                    <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-                        <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">Compromisso</p>
-                        <h3 className="mt-4 text-2xl font-semibold text-white">
-                            Sem promessas vazias. Com metodo.
-                        </h3>
-                        <p className="mt-4 text-sm text-zinc-300">
-                            O College List AI nao promete resultados garantidos. O desempenho depende
-                            do seu esforco, da qualidade do seu historico e do tempo disponivel.
-                            Nosso papel e entregar clareza e direcao para que voce tome melhores decisoes.
-                        </p>
-                        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-zinc-400">
-                            Transparencia importa: se algo nao puder ser afirmado com seguranca, nao vamos afirmar.
                         </div>
-                    </div>
+                    </motion.div>
                 </div>
             </section>
 
-            <section id="faq" className="px-6 pb-16 md:px-12">
-                <div className="rounded-3xl border border-white/10 bg-white/5 p-8">
-                    <div className="flex flex-col gap-2">
-                        <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">FAQ</p>
-                        <h2 className="text-3xl font-semibold text-white">Perguntas frequentes</h2>
-                    </div>
-                    <div className="mt-6 grid gap-4 lg:grid-cols-2">
-                        {[{
-                            q: 'Em quanto tempo minha lista fica pronta?',
-                            a: 'Nao existe um prazo fixo. O tempo varia conforme a qualidade das informacoes e o ritmo de cada pessoa.'
-                        }, {
-                            q: 'O sistema garante aprovacao?',
-                            a: 'Nao. Ele organiza criterios e orienta decisoes, mas o resultado depende do seu desempenho e contexto.'
-                        }, {
-                            q: 'Posso ajustar prioridades depois?',
-                            a: 'Sim. Voce pode refazer escolhas e testar cenarios para entender impactos na lista.'
-                        }, {
-                            q: 'Os dados sao protegidos?',
-                            a: 'Aplicamos boas praticas de seguranca e acesso restrito ao seu perfil.'
-                        }].map((item) => (
-                            <div key={item.q} className="rounded-2xl border border-white/10 bg-zinc-950/40 p-5">
-                                <p className="text-sm font-semibold text-white">{item.q}</p>
-                                <p className="mt-2 text-sm text-zinc-400">{item.a}</p>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </section>
+            {/* Footer */}
+            <footer className="py-12 px-6 border-t border-white/5">
+                <div className="max-w-7xl mx-auto">
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                        <div className="flex items-center gap-2">
+                            <GraduationCap className="w-6 h-6 text-zinc-400" />
+                            <span className="text-zinc-400 font-medium">
+                                College List AI
+                            </span>
+                        </div>
 
-            <section className="px-6 pb-20 md:px-12">
-                <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/10 via-white/5 to-transparent p-10 text-center">
-                    <h2 className="text-3xl font-semibold text-white">
-                        Pronto para construir sua lista com estrategia?
-                    </h2>
-                    <p className="mx-auto mt-4 max-w-2xl text-sm text-zinc-300">
-                        Comece agora e receba um plano claro, sem promessas impossiveis.
-                    </p>
-                    <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                        <Link
-                            to="/app/login"
-                            className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-200"
-                        >
-                            Criar minha lista
-                            <ArrowRight className="h-4 w-4" />
-                        </Link>
-                        <Link
-                            to="/app/login"
-                            className="inline-flex items-center gap-2 rounded-full border border-white/10 px-6 py-3 text-sm text-zinc-200 hover:bg-white/5 transition"
-                        >
-                            Falar com o assistente
-                        </Link>
-                    </div>
-                </div>
-            </section>
+                        <p className="text-sm text-zinc-600">
+                            © 2026 College List AI. All rights reserved.
+                        </p>
 
-            <footer className="px-6 pb-10 md:px-12">
-                <div className="flex flex-col gap-4 border-t border-white/10 pt-6 text-sm text-zinc-500 md:flex-row md:items-center md:justify-between">
-                    <p>(c) 2026 College List AI. Todos os direitos reservados.</p>
-                    <div className="flex flex-wrap gap-4">
-                        <span className="text-zinc-400">Privacidade</span>
-                        <span className="text-zinc-400">Termos</span>
-                        <span className="text-zinc-400">Contato</span>
+                        <div className="flex items-center gap-6 text-sm text-zinc-500">
+                            <a
+                                href="#"
+                                className="hover:text-white transition-colors no-underline"
+                            >
+                                Privacy
+                            </a>
+                            <a
+                                href="#"
+                                className="hover:text-white transition-colors no-underline"
+                            >
+                                Terms
+                            </a>
+                            <a
+                                href="https://github.com/LuisAbrantes/collegeListAI"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="hover:text-white transition-colors no-underline"
+                            >
+                                GitHub
+                            </a>
+                        </div>
                     </div>
                 </div>
             </footer>
         </div>
-    );
-}
-
-function CheckMark() {
-    return (
-        <span className="mt-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/10">
-            <span className="h-2 w-2 rounded-full bg-safety" />
-        </span>
     );
 }
