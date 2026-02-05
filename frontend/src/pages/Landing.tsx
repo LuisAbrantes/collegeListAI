@@ -8,7 +8,6 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-    GraduationCap,
     Search,
     Target,
     Shield,
@@ -21,7 +20,8 @@ import {
     CheckCircle,
     MessageSquare,
     ListChecks,
-    Star
+    Clock,
+    Settings
 } from 'lucide-react';
 
 export function Landing() {
@@ -112,7 +112,29 @@ export function Landing() {
         { value: 'Free', label: 'To Get Started' }
     ];
 
-    const testimonials = [];
+    // Why College List AI - Differentiation points
+    const whyPoints = [
+        {
+            icon: Clock,
+            title: 'Save Time',
+            description: 'Stop spending weeks on random rankings and Reddit threads.'
+        },
+        {
+            icon: DollarSign,
+            title: 'See Costs Upfront',
+            description: "See cost and financial aid friendliness upfront, not after you fall in love with a school."
+        },
+        {
+            icon: Target,
+            title: 'Clear Categories',
+            description: 'Reach / Target / Safety labels tailored to your GPA, scores, and major.'
+        },
+        {
+            icon: Settings,
+            title: 'You Stay in Control',
+            description: 'AI suggests, you decide. Build a list that fits your goals.'
+        }
+    ];
 
     return (
         <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans overflow-x-hidden">
@@ -129,7 +151,7 @@ export function Landing() {
                         to="/"
                         className="flex items-center gap-2 text-white no-underline"
                     >
-                        <GraduationCap className="w-7 h-7" />
+                        <img src="https://em-content.zobj.net/source/apple/391/graduation-cap_1f393.png" alt="🎓" className="w-7 h-7" />
                         <span className="text-lg font-semibold tracking-tight">
                             College List AI
                         </span>
@@ -174,18 +196,24 @@ export function Landing() {
 
                         <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-[1.1] tracking-tight">
                             <span className="bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
-                                Your AI College
+                                Build a Smart
                             </span>
                             <br />
                             <span className="bg-gradient-to-r from-zinc-300 via-zinc-400 to-zinc-500 bg-clip-text text-transparent">
-                                Advisor
+                                College List
                             </span>
                         </h1>
 
-                        <p className="text-xl text-zinc-400 mb-10 max-w-2xl mx-auto leading-relaxed">
-                            Get personalized college recommendations that match
-                            your unique profile, goals, and the perfect
-                            university fit, powered by advanced AI technology.
+                        <p className="text-xl text-zinc-400 mb-4 max-w-2xl mx-auto leading-relaxed">
+                            Get real admission odds and cost estimates for U.S. colleges.
+                            Use AI to find reach, target, and safety schools that match
+                            your profile, budget, and major.
+                        </p>
+
+                        {/* For Who positioning */}
+                        <p className="text-sm text-zinc-500 mb-10 max-w-xl mx-auto">
+                            Designed for high school students, gap-year applicants, and transfers
+                            applying to U.S. colleges – from any country.
                         </p>
 
                         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -193,7 +221,7 @@ export function Landing() {
                                 to="/app/login"
                                 className="group flex items-center gap-2 px-8 py-4 bg-white text-zinc-950 rounded-xl font-semibold text-lg hover:bg-zinc-100 transition-all no-underline hover:scale-[1.02]"
                             >
-                                Start Building Your List
+                                Get Your College List (Free)
                                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                             </Link>
                             <a
@@ -230,9 +258,8 @@ export function Landing() {
                                         <div className="bg-white/10 rounded-2xl rounded-br-md px-4 py-3 max-w-md">
                                             <p className="text-sm text-zinc-200">
                                                 Give me 5 target schools for
-                                                Computer Science with good
-                                                financial aid for international
-                                                students
+                                                Computer Science where my total
+                                                cost is likely under $30k/year
                                             </p>
                                         </div>
                                     </div>
@@ -241,8 +268,8 @@ export function Landing() {
                                         <div className="bg-zinc-800/50 rounded-2xl rounded-bl-md px-4 py-3 max-w-lg">
                                             <p className="text-sm text-zinc-300 mb-3">
                                                 Based on your profile, here are
-                                                5 target schools with excellent
-                                                CS programs and financial aid:
+                                                target schools with strong CS programs
+                                                within your budget:
                                             </p>
 
                                             {/* College Cards Preview */}
@@ -251,17 +278,20 @@ export function Landing() {
                                                     {
                                                         name: 'University of Michigan',
                                                         label: 'Target',
-                                                        color: 'border-target text-target'
+                                                        color: 'border-target text-target',
+                                                        aid: 'Est. $26-30k/yr after aid'
                                                     },
                                                     {
                                                         name: 'Georgia Tech',
                                                         label: 'Target',
-                                                        color: 'border-target text-target'
+                                                        color: 'border-target text-target',
+                                                        aid: 'Strong merit scholarships'
                                                     },
                                                     {
-                                                        name: 'UC San Diego',
+                                                        name: 'UT Austin',
                                                         label: 'Target',
-                                                        color: 'border-target text-target'
+                                                        color: 'border-target text-target',
+                                                        aid: 'Est. $22-28k/yr for residents'
                                                     }
                                                 ].map((school, i) => (
                                                     <motion.div
@@ -277,15 +307,20 @@ export function Landing() {
                                                         transition={{
                                                             delay: 0.8 + i * 0.1
                                                         }}
-                                                        className={`flex items-center justify-between p-3 bg-zinc-900/50 rounded-lg border-l-2 ${school.color.split(' ')[0]}`}
+                                                        className={`flex flex-col gap-1 p-3 bg-zinc-900/50 rounded-lg border-l-2 ${school.color.split(' ')[0]}`}
                                                     >
-                                                        <span className="text-sm text-zinc-200">
-                                                            {school.name}
-                                                        </span>
-                                                        <span
-                                                            className={`text-[0.6rem] uppercase tracking-wider px-2 py-0.5 rounded border border-current font-mono ${school.color.split(' ')[1]}`}
-                                                        >
-                                                            {school.label}
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-sm text-zinc-200">
+                                                                {school.name}
+                                                            </span>
+                                                            <span
+                                                                className={`text-[0.6rem] uppercase tracking-wider px-2 py-0.5 rounded border border-current font-mono ${school.color.split(' ')[1]}`}
+                                                            >
+                                                                {school.label}
+                                                            </span>
+                                                        </div>
+                                                        <span className="text-xs text-zinc-500">
+                                                            {school.aid}
                                                         </span>
                                                     </motion.div>
                                                 ))}
@@ -324,6 +359,109 @@ export function Landing() {
                             </motion.div>
                         ))}
                     </motion.div>
+                </div>
+            </section>
+
+            {/* Dream Schools / University Logos Section */}
+            <section className="py-16 px-6">
+                <div className="max-w-7xl mx-auto">
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        className="text-center mb-10"
+                    >
+                        <h3 className="text-xl md:text-2xl font-semibold text-white mb-3">
+                            Your Dream School Is Within Reach
+                        </h3>
+                        <p className="text-base text-zinc-400 max-w-xl mx-auto">
+                            Every year, students just like you get accepted to these schools. 
+                            We help you find where you truly belong — and build a list that gets you there.
+                        </p>
+                    </motion.div>
+
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        whileInView={{ opacity: 1 }}
+                        viewport={{ once: true }}
+                        transition={{ delay: 0.2 }}
+                        className="flex flex-wrap justify-center items-center gap-8 md:gap-12"
+                    >
+                        {[
+                            {
+                                name: 'Massachusetts Institute of Technology',
+                                logo: 'https://download.logo.wine/logo/Massachusetts_Institute_of_Technology/Massachusetts_Institute_of_Technology-Logo.wine.png'
+                            },
+                            {
+                                name: 'Stanford University',
+                                logo: 'https://upload.wikimedia.org/wikipedia/commons/b/b5/Seal_of_Leland_Stanford_Junior_University.svg'
+                            },
+                            {
+                                name: 'Harvard University',
+                                logo: 'https://upload.wikimedia.org/wikipedia/commons/c/cc/Harvard_University_coat_of_arms.svg'
+                            },
+                            {
+                                name: 'UC Berkeley',
+                                logo: 'https://upload.wikimedia.org/wikipedia/commons/a/a1/Seal_of_University_of_California%2C_Berkeley.svg'
+                            },
+                            {
+                                name: 'Carnegie Mellon University',
+                                logo: 'https://www.drupal.org/files/styles/grid-4-2x/public/CMU_Logo_Stack_Red.png?itok=z-anp9I_'
+                            },
+                            {
+                                name: 'Georgia Tech',
+                                logo: 'https://upload.wikimedia.org/wikipedia/commons/6/6c/Georgia_Tech_seal.svg'
+                            },
+                            {
+                                name: 'UCLA',
+                                logo: 'https://upload.wikimedia.org/wikipedia/commons/e/ef/UCLA_Bruins_logo.svg'
+                            },
+                            {
+                                name: 'New York University',
+                                logo: 'https://1000logos.net/wp-content/uploads/2022/08/NYU-Logo.png'
+                            },
+                            {
+                                name: 'UT Austin',
+                                logo: 'https://upload.wikimedia.org/wikipedia/commons/8/8d/Texas_Longhorns_logo.svg'
+                            },
+                            {
+                                name: 'Notre Dame',
+                                logo: 'https://upload.wikimedia.org/wikipedia/commons/f/f5/Notre_Dame_Fighting_Irish_logo.svg'
+                            },
+                            {
+                                name: 'University of Michigan',
+                                logo: 'https://upload.wikimedia.org/wikipedia/commons/9/93/Seal_of_the_University_of_Michigan.svg'
+                            }
+                        ].map((school, index) => (
+                            <motion.div
+                                key={school.name}
+                                initial={{ opacity: 0, scale: 0.8 }}
+                                whileInView={{ opacity: 1, scale: 1 }}
+                                viewport={{ once: true }}
+                                transition={{ delay: 0.1 + index * 0.05 }}
+                                whileHover={{ scale: 1.15 }}
+                                className="w-16 h-16 md:w-20 md:h-20 flex items-center justify-center cursor-default transition-all opacity-80 hover:opacity-100 hover:scale-1.15"
+                                title={school.name}
+                            >
+                                <img 
+                                    src={school.logo} 
+                                    alt={school.name}
+                                    className="w-full h-full object-contain"
+                                />
+                            </motion.div>
+                        ))}
+                    </motion.div>
+
+                    {/* Data credibility note */}
+                    <motion.p
+                        initial={{ opacity: 0 }}
+                        whileInView={{ opacity: 1 }}
+                        viewport={{ once: true }}
+                        transition={{ delay: 0.5 }}
+                        className="text-center text-xs text-zinc-600 mt-8"
+                    >
+                        Powered by data from IPEDS, College Scorecard, and official university reports.
+                    </motion.p>
                 </div>
             </section>
 
@@ -510,7 +648,66 @@ export function Landing() {
                 </div>
             </section>
 
-            {/* Testimonials */}
+            {/* Why College List AI Section */}
+            <section className="py-24 px-6 bg-zinc-900/30">
+                <div className="max-w-7xl mx-auto">
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        className="text-center mb-16"
+                    >
+                        <h2 className="text-4xl font-bold mb-4">
+                            Why College List AI?
+                        </h2>
+                        <p className="text-zinc-400 max-w-2xl mx-auto">
+                            Skip the guesswork. Get data-driven insights that save time and money.
+                        </p>
+                    </motion.div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        {whyPoints.map((point, i) => (
+                            <motion.div
+                                key={point.title}
+                                initial={{ opacity: 0, y: 20 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true }}
+                                transition={{ delay: i * 0.1 }}
+                                className="glass-card p-6 text-center"
+                            >
+                                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-white/5 mb-4">
+                                    <point.icon className="w-6 h-6 text-zinc-300" />
+                                </div>
+                                <h3 className="text-lg font-semibold mb-2">
+                                    {point.title}
+                                </h3>
+                                <p className="text-sm text-zinc-400 leading-relaxed">
+                                    {point.description}
+                                </p>
+                            </motion.div>
+                        ))}
+                    </div>
+                </div>
+            </section>
+
+            {/* Emotional Paragraph Section */}
+            <section className="py-16 px-6">
+                <div className="max-w-3xl mx-auto text-center">
+                    <motion.p
+                        initial={{ opacity: 0, y: 20 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        className="text-xl text-zinc-400 leading-relaxed italic"
+                    >
+                        "Choosing where to apply shouldn't feel like guessing. Whether you're in
+                        the U.S. or halfway across the world, College List AI helps you build a list
+                        that fits your profile, your dreams, and your budget – so you spend your
+                        application time and money where it actually matters."
+                    </motion.p>
+                </div>
+            </section>
+
+            {/* Testimonials - Commented for future use */}
             {/* <section className="py-24 px-6 bg-zinc-900/30">
                 <div className="max-w-7xl mx-auto">
                     <motion.div
@@ -581,9 +778,9 @@ export function Landing() {
                                 Ready to Build Your College List?
                             </h2>
                             <p className="text-zinc-400 mb-8 max-w-xl mx-auto">
-                                Join thousands of international students using
-                                AI to find their perfect college match. Start
-                                free, upgrade anytime.
+                                Join students from the U.S. and around the world
+                                using AI to find their perfect college match.
+                                Start free, upgrade anytime.
                             </p>
 
                             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -591,7 +788,7 @@ export function Landing() {
                                     to="/app/login"
                                     className="group flex items-center gap-2 px-8 py-4 bg-white text-zinc-950 rounded-xl font-semibold text-lg hover:bg-zinc-100 transition-all no-underline hover:scale-[1.02]"
                                 >
-                                    Get Started Free
+                                    Get Your College List (Free)
                                     <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                                 </Link>
                             </div>
@@ -620,7 +817,7 @@ export function Landing() {
                 <div className="max-w-7xl mx-auto">
                     <div className="flex flex-col md:flex-row items-center justify-between gap-6">
                         <div className="flex items-center gap-2">
-                            <GraduationCap className="w-6 h-6 text-zinc-400" />
+                            <img src="https://em-content.zobj.net/source/apple/391/graduation-cap_1f393.png" alt="🎓" className="w-6 h-6" />
                             <span className="text-zinc-400 font-medium">
                                 College List AI
                             </span>
