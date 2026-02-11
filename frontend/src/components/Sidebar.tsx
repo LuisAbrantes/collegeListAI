@@ -13,7 +13,8 @@ import {
     Trash2,
     Clock,
     ListChecks,
-    Home
+    Home,
+    Sparkles
 } from 'lucide-react';
 import type { UserProfile } from '../types/api';
 import { useChatContext } from '../contexts/ChatContext';
@@ -108,6 +109,13 @@ export function Sidebar({ userProfile, onSignOut }: SidebarProps) {
                 >
                     <User size={18} />
                     My Profile
+                </Link>
+                <Link
+                    to="/pricing"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors no-underline text-violet-400 hover:text-violet-300 hover:bg-violet-500/10"
+                >
+                    <Sparkles size={18} />
+                    Upgrade
                 </Link>
             </nav>
 

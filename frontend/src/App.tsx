@@ -14,6 +14,7 @@ import { Home } from './pages/Home';
 import { Chat } from './pages/Chat';
 import { Profile } from './pages/Profile';
 import { MyList } from './pages/MyList';
+import { Pricing } from './pages/Pricing';
 
 function ProtectedRoutes() {
     const { user, loading: authLoading, signOut } = useAuth();
@@ -80,7 +81,8 @@ export default function App() {
     return (
         <BrowserRouter>
             <Routes>
-                <Route path="/" element={<Landing />} />
+            <Route path="/" element={<Landing />} />
+                <Route path="/pricing" element={<Pricing />} />
                 <Route path="/app/login" element={<Login />} />
                 <Route path="/app/*" element={<ProtectedRoutes />} />
                 <Route path="*" element={<Navigate to="/" replace />} />

@@ -2,12 +2,14 @@
  * Login Page
  */
 
-import { Navigate } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { AuthForm } from '../components/AuthForm';
 
 export function Login() {
     const { user, loading } = useAuth();
+    const [searchParams] = useSearchParams();
+    const returnTo = searchParams.get('returnTo') || '/app';
 
     // Show loading while checking auth
     if (loading) {
@@ -18,10 +20,11 @@ export function Login() {
         );
     }
 
-    // Already logged in -> redirect to app
+    // Already logged in -> redirect to intended destination
     if (user) {
-        return <Navigate to="/app" replace />;
+        return <Navigate to={returnTo} replace />;
     }
 
-    return <AuthForm />;
+    return <AuthForm returnTo={returnTo} />;
 }
+

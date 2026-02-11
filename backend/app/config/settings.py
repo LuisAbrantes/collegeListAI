@@ -118,6 +118,30 @@ class Settings(BaseSettings):
     database_pool_timeout: int = 30
     database_echo: bool = False
     
+    # ============================================================
+    # STRIPE CONFIGURATION
+    # ============================================================
+    
+    stripe_secret_key: Optional[str] = None
+    stripe_publishable_key: Optional[str] = None
+    stripe_webhook_secret: Optional[str] = None
+    
+    # Free tier limits
+    free_tier_conversations_limit: int = 3
+    free_tier_schools_limit: int = 10
+    launch_promo_active: bool = True
+    
+    # Stripe Price IDs - matches .env naming convention
+    # Launch prices (promotional)
+    stripe_price_id_launch_usd: Optional[str] = None
+    stripe_price_id_launch_brl: Optional[str] = None
+    # Regular prices (post-launch)
+    stripe_price_id_regular_usd: Optional[str] = None
+    stripe_price_id_regular_brl: Optional[str] = None
+    # Annual prices
+    stripe_price_id_annual_usd: Optional[str] = None
+    stripe_price_id_annual_brl: Optional[str] = None
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

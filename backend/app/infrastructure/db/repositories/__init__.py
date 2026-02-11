@@ -25,6 +25,10 @@ from app.infrastructure.db.repositories.user_event_repository import (
 from app.infrastructure.db.repositories.application_outcome_repository import (
     ApplicationOutcomeRepository,
 )
+from app.infrastructure.db.repositories.subscription_repository import (
+    SubscriptionRepository,
+    get_subscription_repository,
+)
 
 
 __all__ = [
@@ -39,4 +43,6 @@ __all__ = [
     "ChatRepository",
     "UserEventRepository",
     "ApplicationOutcomeRepository",
+    "SubscriptionRepository",
+    "get_subscription_repository",
 ]

@@ -7,7 +7,11 @@ import type { FormEvent } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { motion, AnimatePresence } from 'framer-motion';
 
-export function AuthForm() {
+interface AuthFormProps {
+    returnTo?: string;
+}
+
+export function AuthForm({ returnTo: _returnTo = '/app' }: AuthFormProps) {
     const { loading, error, signIn, signUp, clearError } = useAuth();
     const [isLogin, setIsLogin] = useState(true);
     const [email, setEmail] = useState('');
@@ -16,8 +20,13 @@ export function AuthForm() {
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
         clearError();
-        if (isLogin) await signIn(email, password);
-        else await signUp(email, password);
+        
+        if (isLogin) {
+            await signIn(email, password);
+        } else {
+            await signUp(email, password);
+        }
+        // Redirect is handled by Login.tsx when user state changes
     };
 
     const toggleMode = () => {

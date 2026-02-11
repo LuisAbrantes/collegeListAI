@@ -159,6 +159,12 @@ export function Landing() {
 
                     <div className="flex items-center gap-4">
                         <Link
+                            to="/pricing"
+                            className="text-zinc-400 hover:text-white transition-colors no-underline text-sm"
+                        >
+                            Pricing
+                        </Link>
+                        <Link
                             to="/app/login"
                             className="text-zinc-400 hover:text-white transition-colors no-underline text-sm"
                         >
