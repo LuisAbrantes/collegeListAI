@@ -23,6 +23,7 @@ import {
     Clock,
     Settings
 } from 'lucide-react';
+import { PricingSection } from '../components/PricingSection';
 
 export function Landing() {
     const fadeInUp = {
@@ -158,12 +159,12 @@ export function Landing() {
                     </Link>
 
                     <div className="flex items-center gap-4">
-                        <Link
-                            to="/pricing"
+                        <a
+                            href="#pricing"
                             className="text-zinc-400 hover:text-white transition-colors no-underline text-sm"
                         >
                             Pricing
-                        </Link>
+                        </a>
                         <Link
                             to="/app/login"
                             className="text-zinc-400 hover:text-white transition-colors no-underline text-sm"
@@ -731,6 +732,9 @@ export function Landing() {
                     </div>
                 </div>
             </section>
+
+            {/* Pricing Section */}
+            <PricingSection />
 
             {/* Emotional Paragraph Section */}
             <section className="py-16 px-6">
