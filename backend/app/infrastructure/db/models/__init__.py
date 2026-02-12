@@ -36,6 +36,7 @@ from app.infrastructure.db.models.application_outcome import (
     ApplicationOutcomeUpdate,
     OutcomeStatus,
 )
+from app.infrastructure.db.models.subscription import SubscriptionModel
 
 
 __all__ = [
@@ -65,5 +66,7 @@ __all__ = [
     "ApplicationOutcomeCreate",
     "ApplicationOutcomeUpdate",
     "OutcomeStatus",
+    # Subscription
+    "SubscriptionModel",
 ]
 

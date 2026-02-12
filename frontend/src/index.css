@@ -3,21 +3,21 @@
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply bg-zinc-950 text-zinc-100 font-sans antialiased min-h-screen bg-mesh bg-fixed;
-  }
+    body {
+        @apply bg-zinc-950 text-zinc-100 font-sans antialiased min-h-screen bg-mesh bg-fixed;
+    }
 }
 
 @layer utilities {
-  .glass-card {
-    @apply bg-zinc-900/60 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl;
-  }
-  
-  .glass-input {
-    @apply w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-zinc-100 font-sans transition-all focus:outline-none focus:border-white/20 focus:bg-white/10 placeholder:text-zinc-600;
-  }
+    .glass-card {
+        @apply bg-zinc-900/60 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl;
+    }
 
-  .btn-primary {
-    @apply px-4 py-3 rounded-lg font-semibold bg-zinc-100 text-zinc-950 hover:bg-white hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed;
-  }
+    .glass-input {
+        @apply w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-zinc-100 font-sans transition-all focus:outline-none focus:border-white/20 focus:bg-white/10 placeholder:text-zinc-600;
+    }
+
+    .btn-primary {
+        @apply px-4 py-3 rounded-lg font-semibold bg-zinc-100 text-zinc-950 hover:bg-white hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed;
+    }
 }
