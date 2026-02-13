@@ -2,7 +2,7 @@
 Stripe Webhook Handler
 
 Handles Stripe webhook events for subscription lifecycle management.
-Implements idempotent event processing per stripe-integration skill.
+Implements idempotent event processing backed by the database (survives restarts).
 
 Critical Events:
 - checkout.session.completed: Activate subscription after payment
@@ -14,9 +14,9 @@ Critical Events:
 
 import logging
 from datetime import datetime
-from typing import Set
 
 from fastapi import APIRouter, Request, HTTPException, status
+from sqlalchemy import text
 
 from app.domain.subscription import (
     Subscription,
@@ -35,6 +35,7 @@ from app.infrastructure.db.repositories.subscription_repository import (
     SubscriptionRepository,
     get_subscription_repository,
 )
+from app.infrastructure.db.database import get_session_context
 
 
 logger = logging.getLogger(__name__)
@@ -43,28 +44,29 @@ router = APIRouter()
 
 
 # =============================================================================
-# Idempotency: Track processed events
+# Idempotency: DB-backed processed event tracking
 # =============================================================================
 
-# In production, use Redis or database for distributed idempotency
-_processed_events: Set[str] = set()
+async def is_event_processed(event_id: str) -> bool:
+    """Check if a webhook event has already been processed (DB query)."""
+    async with get_session_context() as session:
+        result = await session.execute(
+            text("SELECT 1 FROM processed_webhook_events WHERE event_id = :eid"),
+            {"eid": event_id},
+        )
+        return result.scalar_one_or_none() is not None
 
 
-def is_event_processed(event_id: str) -> bool:
-    """Check if event has already been processed."""
-    return event_id in _processed_events
-
-
-def mark_event_processed(event_id: str) -> None:
-    """Mark event as processed."""
-    _processed_events.add(event_id)
-    
-    # Keep set size manageable (last 10000 events)
-    if len(_processed_events) > 10000:
-        # Remove oldest entries (simple approach)
-        to_remove = list(_processed_events)[:5000]
-        for event_id in to_remove:
-            _processed_events.discard(event_id)
+async def mark_event_processed(event_id: str, event_type: str) -> None:
+    """Record a processed webhook event in the database."""
+    async with get_session_context() as session:
+        await session.execute(
+            text(
+                "INSERT INTO processed_webhook_events (event_id, event_type) "
+                "VALUES (:eid, :etype) ON CONFLICT (event_id) DO NOTHING"
+            ),
+            {"eid": event_id, "etype": event_type},
+        )
 
 
 # =============================================================================
@@ -132,8 +134,8 @@ async def stripe_webhook(request: Request):
         else:
             logger.debug(f"Unhandled event type: {event_type}")
         
-        # Mark as processed
-        mark_event_processed(event_id)
+        # Mark as processed (DB-backed)
+        await mark_event_processed(event_id, event_type)
         
         return {"status": "success"}
         

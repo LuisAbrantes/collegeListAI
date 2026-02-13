@@ -8,7 +8,7 @@ Enums, DTOs, and domain entities for the subscription bounded context.
 from datetime import datetime
 from enum import Enum
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SubscriptionTier(str, Enum):
@@ -61,8 +61,7 @@ class Subscription(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # =============================================================================

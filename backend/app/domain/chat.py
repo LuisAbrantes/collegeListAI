@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Optional, List
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MessageRole(str, Enum):
@@ -39,8 +39,7 @@ class ChatThread(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ChatMessageCreate(BaseModel):
@@ -60,8 +59,7 @@ class ChatMessage(BaseModel):
     sources: Optional[List[dict]] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ChatThreadWithMessages(ChatThread):

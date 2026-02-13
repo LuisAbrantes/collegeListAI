@@ -7,13 +7,14 @@ API endpoints for chat thread and message management.
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Header
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.db.database import get_session
 from app.infrastructure.db.chat_service import ChatService
 from app.domain.chat import MessageRole
+from app.api.dependencies import get_current_user_id as _get_current_user_str
 
 
 router = APIRouter()
@@ -32,8 +33,7 @@ class ThreadResponse(BaseModel):
     created_at: str
     updated_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MessageResponse(BaseModel):
@@ -45,8 +45,7 @@ class MessageResponse(BaseModel):
     sources: Optional[List[dict]] = None
     created_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ThreadListResponse(BaseModel):
@@ -78,19 +77,10 @@ class CreateMessageRequest(BaseModel):
 # ============================================================================
 
 async def get_current_user_id(
-    authorization: Optional[str] = Header(None)
+    user_id_str: str = Depends(_get_current_user_str),
 ) -> UUID:
-    """Extract user ID from authorization header."""
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header required")
-    
-    try:
-        scheme, token = authorization.split()
-        if scheme.lower() != "bearer":
-            raise HTTPException(status_code=401, detail="Invalid authorization scheme")
-        return UUID(token)
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid authorization token")
+    """Convert verified JWT user_id (str) to UUID for downstream repos."""
+    return UUID(user_id_str)
 
 
 def get_chat_service(session: AsyncSession = Depends(get_session)) -> ChatService:

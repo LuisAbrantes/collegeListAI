@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_anon_key: Optional[str] = None
     supabase_service_role_key: str
+    supabase_jwt_secret: Optional[str] = None  # Settings > API > JWT Secret (HS256 fallback)
     
     # Google AI Configuration
     google_api_key: Optional[str] = None

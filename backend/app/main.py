@@ -11,6 +11,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from app.config.settings import settings
 from app.infrastructure.exceptions import (
@@ -18,6 +21,9 @@ from app.infrastructure.exceptions import (
     ValidationError,
     NotFoundError,
     RateLimitError,
+    AIServiceError,
+    VectorServiceError,
+    ConfigurationError,
 )
 
 # Configure logging
@@ -57,6 +63,15 @@ async def lifespan(app: FastAPI):
     logger.info("College List AI Backend shutting down...")
 
 
+# =============================================================================
+# Rate Limiter  (slowapi — per-IP, in-memory backend)
+# =============================================================================
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["100/minute"],          # global fallback
+    storage_uri="memory://",                # swap for redis:// in prod
+)
+
 app = FastAPI(
     title="College List AI",
     description="AI-powered college advisor for building your strategic college list",
@@ -64,6 +79,10 @@ app = FastAPI(
     lifespan=lifespan,
     debug=settings.debug,
 )
+
+# Attach limiter state + error handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS configuration - always use configured origins
 # SECURITY: Never use allow_origins=["*"] even in development
@@ -132,6 +151,33 @@ async def rate_limit_error_handler(request: Request, exc: RateLimitError):
     return JSONResponse(
         status_code=429,
         content=exc.to_dict(),
+    )
+
+
+@app.exception_handler(AIServiceError)
+async def ai_service_error_handler(request: Request, exc: AIServiceError):
+    """Handle AI service errors (Gemini, embeddings)."""
+    return JSONResponse(
+        status_code=503,
+        content=exc.to_dict(),
+    )
+
+
+@app.exception_handler(VectorServiceError)
+async def vector_service_error_handler(request: Request, exc: VectorServiceError):
+    """Handle vector search service errors."""
+    return JSONResponse(
+        status_code=503,
+        content=exc.to_dict(),
+    )
+
+
+@app.exception_handler(ConfigurationError)
+async def configuration_error_handler(request: Request, exc: ConfigurationError):
+    """Handle configuration errors with a safe message."""
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal server configuration error", "code": "CONFIGURATION_ERROR"},
     )
 
 

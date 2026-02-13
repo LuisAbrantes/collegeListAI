@@ -5,7 +5,7 @@ Handles CRUD operations for student profiles (nationality, GPA, major).
 Uses Supabase as the persistence layer with proper error handling.
 """
 
-import os
+
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
@@ -52,10 +52,9 @@ class UserProfileService:
     
     def _initialize_client(self) -> None:
         """Initialize Supabase client with connection pooling."""
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        from app.config.settings import settings
         
-        if not supabase_url or not supabase_key:
+        if not settings.supabase_url or not settings.supabase_service_role_key:
             raise ConfigurationError(
                 "Missing Supabase configuration",
                 missing_keys=["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]
@@ -67,7 +66,11 @@ class UserProfileService:
             storage_client_timeout=30,
         )
         
-        self._client = create_client(supabase_url, supabase_key, options)
+        self._client = create_client(
+            settings.supabase_url,
+            settings.supabase_service_role_key,
+            options,
+        )
     
     @property
     def client(self) -> Client:

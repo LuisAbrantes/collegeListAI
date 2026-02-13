@@ -9,10 +9,12 @@ import json
 from typing import Optional, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.infrastructure.db.vector_service import VectorService
 from app.infrastructure.ai.gemini_service import GeminiService
@@ -22,8 +24,10 @@ from app.infrastructure.exceptions import (
     RateLimitError,
 )
 
+from app.api.dependencies import get_current_user_id as _get_current_user_str
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 
 # ============================================================================
@@ -130,20 +134,15 @@ def get_gemini_service() -> GeminiService:
     return GeminiService()
 
 
+# ============================================================================
+# Auth Dependency — delegates to centralized JWT verification
+# ============================================================================
+
 async def get_current_user_id(
-    authorization: Optional[str] = Header(None)
+    user_id_str: str = Depends(_get_current_user_str),
 ) -> UUID:
-    """Extract user ID from authorization header."""
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header required")
-    
-    try:
-        scheme, token = authorization.split()
-        if scheme.lower() != "bearer":
-            raise HTTPException(status_code=401, detail="Invalid authorization scheme")
-        return UUID(token)
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid authorization token")
+    """Convert verified JWT user_id (str) to UUID for downstream repos."""
+    return UUID(user_id_str)
 
 
 # ============================================================================
@@ -151,8 +150,10 @@ async def get_current_user_id(
 # ============================================================================
 
 @router.post("/search", response_model=SearchResponse)
+@limiter.limit("20/minute")
 async def search_colleges(
-    request: SearchRequest,
+    request_obj: SearchRequest,
+    request: Request,
     vector_service: VectorService = Depends(get_vector_service)
 ):
     """
@@ -163,9 +164,9 @@ async def search_colleges(
     """
     try:
         results = await vector_service.search_similar_colleges(
-            query_text=request.query,
-            threshold=request.threshold,
-            limit=request.limit,
+            query_text=request_obj.query,
+            threshold=request_obj.threshold,
+            limit=request_obj.limit,
         )
         
         return SearchResponse(
@@ -178,7 +179,7 @@ async def search_colleges(
                 )
                 for r in results
             ],
-            query=request.query,
+            query=request_obj.query,
             total=len(results),
         )
     except VectorServiceError as e:
@@ -190,8 +191,10 @@ async def search_colleges(
 # ============================================================================
 
 @router.post("/recommend")
+@limiter.limit("10/minute")
 async def get_recommendations(
-    request: RecommendRequest,
+    request_obj: RecommendRequest,
+    request: Request,
 ):
     """
     Get AI-powered college recommendations using LangGraph agent.
@@ -208,33 +211,33 @@ async def get_recommendations(
     
     try:
         profile: StudentProfile = {
-            "citizenship_status": request.citizenship_status,
-            "nationality": request.nationality,
-            "gpa": request.gpa,
-            "major": request.major,
-            "minor": request.minor,  # NEW
-            "sat_score": request.sat_score,
-            "act_score": request.act_score,
-            "state_of_residence": request.state_of_residence,
-            "household_income_tier": request.household_income_tier,
-            "english_proficiency_score": request.english_proficiency_score,
-            "english_test_type": request.english_test_type,
-            "campus_vibe": request.campus_vibe,
-            "is_student_athlete": request.is_student_athlete,
-            "has_legacy_status": request.has_legacy_status,
-            "legacy_universities": request.legacy_universities,
-            "post_grad_goal": request.post_grad_goal,
-            "is_first_gen": request.is_first_gen,
-            "ap_class_count": request.ap_class_count,
-            "ap_classes": request.ap_classes,
+            "citizenship_status": request_obj.citizenship_status,
+            "nationality": request_obj.nationality,
+            "gpa": request_obj.gpa,
+            "major": request_obj.major,
+            "minor": request_obj.minor,
+            "sat_score": request_obj.sat_score,
+            "act_score": request_obj.act_score,
+            "state_of_residence": request_obj.state_of_residence,
+            "household_income_tier": request_obj.household_income_tier,
+            "english_proficiency_score": request_obj.english_proficiency_score,
+            "english_test_type": request_obj.english_test_type,
+            "campus_vibe": request_obj.campus_vibe,
+            "is_student_athlete": request_obj.is_student_athlete,
+            "has_legacy_status": request_obj.has_legacy_status,
+            "legacy_universities": request_obj.legacy_universities,
+            "post_grad_goal": request_obj.post_grad_goal,
+            "is_first_gen": request_obj.is_first_gen,
+            "ap_class_count": request_obj.ap_class_count,
+            "ap_classes": request_obj.ap_classes,
         }
         
         # Run agent workflow with conversation history
         result = await generate_recommendations(
-            user_query=request.query,
+            user_query=request_obj.query,
             profile=profile,
-            excluded_colleges=request.excluded_colleges,
-            conversation_history=request.conversation_history,  # NEW
+            excluded_colleges=request_obj.excluded_colleges,
+            conversation_history=request_obj.conversation_history,
         )
         
         # Extract content from result
@@ -262,9 +265,11 @@ async def debug_request(request_data: dict):
 
 
 @router.post("/recommend/stream")
+@limiter.limit("10/minute")
 async def stream_recommendations(
-    request: RecommendRequest,
-    authorization: Optional[str] = Header(None),
+    request_obj: RecommendRequest,
+    request: Request,
+    user_id_str: Optional[str] = Depends(_get_current_user_str),
 ):
     """
     Stream AI recommendations via Server-Sent Events (SSE).
@@ -277,47 +282,39 @@ async def stream_recommendations(
     from app.agents.graph import generate_with_agent
     from app.agents.state import StudentProfile
     
-    # Extract user_id from authorization header
-    user_id = None
-    if authorization:
-        try:
-            scheme, token = authorization.split()
-            if scheme.lower() == "bearer":
-                user_id = token
-        except ValueError:
-            pass
+    user_id = user_id_str  # already verified by centralized JWT
     
     async def event_generator():
         try:
             profile: StudentProfile = {
-                "user_id": user_id,  # Pass user_id for list management tools
-                "citizenship_status": request.citizenship_status,
-                "nationality": request.nationality,
-                "gpa": request.gpa,
-                "major": request.major,
-                "minor": request.minor,
-                "sat_score": request.sat_score,
-                "act_score": request.act_score,
-                "state_of_residence": request.state_of_residence,
-                "household_income_tier": request.household_income_tier,
-                "english_proficiency_score": request.english_proficiency_score,
-                "english_test_type": request.english_test_type,
-                "campus_vibe": request.campus_vibe,
-                "is_student_athlete": request.is_student_athlete,
-                "has_legacy_status": request.has_legacy_status,
-                "legacy_universities": request.legacy_universities,
-                "post_grad_goal": request.post_grad_goal,
-                "is_first_gen": request.is_first_gen,
-                "ap_class_count": request.ap_class_count,
-                "ap_classes": request.ap_classes,
+                "user_id": user_id,
+                "citizenship_status": request_obj.citizenship_status,
+                "nationality": request_obj.nationality,
+                "gpa": request_obj.gpa,
+                "major": request_obj.major,
+                "minor": request_obj.minor,
+                "sat_score": request_obj.sat_score,
+                "act_score": request_obj.act_score,
+                "state_of_residence": request_obj.state_of_residence,
+                "household_income_tier": request_obj.household_income_tier,
+                "english_proficiency_score": request_obj.english_proficiency_score,
+                "english_test_type": request_obj.english_test_type,
+                "campus_vibe": request_obj.campus_vibe,
+                "is_student_athlete": request_obj.is_student_athlete,
+                "has_legacy_status": request_obj.has_legacy_status,
+                "legacy_universities": request_obj.legacy_universities,
+                "post_grad_goal": request_obj.post_grad_goal,
+                "is_first_gen": request_obj.is_first_gen,
+                "ap_class_count": request_obj.ap_class_count,
+                "ap_classes": request_obj.ap_classes,
             }
             
             # Use new tool-based agent
             result = await generate_with_agent(
-                user_query=request.query,
+                user_query=request_obj.query,
                 profile=profile,
-                excluded_colleges=request.excluded_colleges,
-                conversation_history=request.conversation_history,
+                excluded_colleges=request_obj.excluded_colleges,
+                conversation_history=request_obj.conversation_history,
             )
             
             # Stream the response content

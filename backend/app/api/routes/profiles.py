@@ -7,12 +7,13 @@ CRUD endpoints for user profiles (nationality, GPA, major).
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.domain.models import UserProfile, UserProfileCreate, UserProfileUpdate
 from app.domain.services import UserProfileService
 from app.infrastructure.exceptions import NotFoundError, DuplicateError
+from app.api.dependencies import get_current_user_id as _get_current_user_str
 
 
 router = APIRouter()
@@ -57,26 +58,10 @@ def get_profile_service() -> UserProfileService:
 
 
 async def get_current_user_id(
-    authorization: Optional[str] = Header(None)
+    user_id_str: str = Depends(_get_current_user_str),
 ) -> UUID:
-    """
-    Extract user ID from authorization header.
-    
-    In production, this would validate a Supabase JWT token.
-    For now, we expect the user_id to be passed directly.
-    """
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header required")
-    
-    # In production: validate JWT and extract user_id from claims
-    # For development: expect Bearer <user_id>
-    try:
-        scheme, token = authorization.split()
-        if scheme.lower() != "bearer":
-            raise HTTPException(status_code=401, detail="Invalid authorization scheme")
-        return UUID(token)
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid authorization token")
+    """Convert verified JWT user_id (str) to UUID for downstream repos."""
+    return UUID(user_id_str)
 
 
 # ============================================================================

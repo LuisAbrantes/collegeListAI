@@ -232,7 +232,10 @@ class GeminiService:
         """
         try:
             user_context = self._build_user_context(
-                nationality, gpa, major, excluded_colleges
+                nationality=nationality,
+                gpa=gpa,
+                major=major,
+                excluded_colleges=excluded_colleges,
             )
             
             # Add cached colleges context if available
@@ -403,19 +406,39 @@ Brief explanation of fit, key programs, and relevant financial aid info.
 """
 
             # Use streaming with search grounding
-            response = self.client.models.generate_content_stream(
-                model=self.DEFAULT_MODEL,
-                contents=streaming_prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.6,  # Lower for more focused responses
-                    max_output_tokens=1500,  # Limit response length
-                    tools=[types.Tool(google_search=types.GoogleSearch())]
-                )
-            )
+            # Wrap sync iterator in to_thread to avoid blocking the event loop
+            import queue
+            chunk_queue: queue.Queue = queue.Queue()
+            _SENTINEL = object()
             
-            for chunk in response:
-                if chunk.text:
-                    yield chunk.text
+            def _run_sync_stream():
+                response = self.client.models.generate_content_stream(
+                    model=self.DEFAULT_MODEL,
+                    contents=streaming_prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.6,
+                        max_output_tokens=1500,
+                        tools=[types.Tool(google_search=types.GoogleSearch())]
+                    )
+                )
+                for chunk in response:
+                    if chunk.text:
+                        chunk_queue.put(chunk.text)
+                chunk_queue.put(_SENTINEL)
+            
+            loop = asyncio.get_event_loop()
+            stream_task = loop.run_in_executor(None, _run_sync_stream)
+            
+            while True:
+                try:
+                    item = await asyncio.to_thread(chunk_queue.get, timeout=30)
+                except Exception:
+                    break
+                if item is _SENTINEL:
+                    break
+                yield item
+            
+            await stream_task
                     
         except Exception as e:
             error_msg = str(e).lower()

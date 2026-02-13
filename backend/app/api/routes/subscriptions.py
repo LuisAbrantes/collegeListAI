@@ -51,12 +51,33 @@ router = APIRouter()
 
 async def get_user_email(user_id: str) -> str:
     """
-    Get user email from Supabase.
-    
-    TODO: Implement actual email lookup from user profile.
+    Fetch the user's email from Supabase Auth (admin API).
+
+    Uses the service_role_key to query the auth.users table via REST.
+    Falls back gracefully if the lookup fails.
     """
-    # For now, return placeholder - will be fetched from profile
-    return f"{user_id}@placeholder.com"
+    import httpx
+
+    settings = get_settings()
+    url = f"{settings.supabase_url}/auth/v1/admin/users/{user_id}"
+    headers = {
+        "apikey": settings.supabase_service_role_key,
+        "Authorization": f"Bearer {settings.supabase_service_role_key}",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                email = data.get("email")
+                if email:
+                    return email
+            logger.warning("Supabase user lookup returned no email for %s", user_id)
+    except Exception as exc:
+        logger.warning("Failed to fetch user email from Supabase: %s", exc)
+
+    return f"{user_id}@unknown.com"
 
 
 # =============================================================================

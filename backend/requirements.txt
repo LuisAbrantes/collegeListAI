@@ -9,6 +9,9 @@ sse-starlette>=2.0.0
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
 
+# Authentication
+PyJWT[crypto]>=2.8.0
+
 # Database
 supabase>=2.0.0
 sqlmodel>=0.0.22
@@ -20,8 +23,12 @@ greenlet>=3.0.0
 google-genai>=1.0.0
 langgraph>=1.0.0
 
+# Payments
+stripe>=8.0.0
+
 # Utilities
 python-dotenv>=1.0.0
+slowapi>=0.1.9
 
 # Development
 httpx>=0.26.0

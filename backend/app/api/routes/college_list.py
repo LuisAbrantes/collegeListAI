@@ -8,7 +8,7 @@ import logging
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Header, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from app.infrastructure.db.database import get_session
@@ -21,6 +21,7 @@ from app.infrastructure.db.models.user_college_list import (
     UserCollegeListItemUpdate,
     UserExclusionCreate,
 )
+from app.api.dependencies import get_current_user_id as _get_current_user_str
 
 logger = logging.getLogger(__name__)
 
@@ -28,28 +29,14 @@ router = APIRouter(prefix="/api", tags=["college-list"])
 
 
 # =============================================================================
-# Auth Dependency
+# Auth Dependency — delegates to centralized JWT verification
 # =============================================================================
 
 async def get_current_user_id(
-    authorization: Optional[str] = Header(None)
+    user_id_str: str = Depends(_get_current_user_str),
 ) -> UUID:
-    """
-    Extract user ID from authorization header.
-    
-    In production, validates Supabase JWT token.
-    For development, expects Bearer <user_id>.
-    """
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header required")
-    
-    try:
-        scheme, token = authorization.split()
-        if scheme.lower() != "bearer":
-            raise HTTPException(status_code=401, detail="Invalid authorization scheme")
-        return UUID(token)
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid authorization token")
+    """Convert verified JWT user_id (str) to UUID for downstream repos."""
+    return UUID(user_id_str)
 
 
 # =============================================================================

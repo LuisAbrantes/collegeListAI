@@ -9,13 +9,14 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.db.dependencies import get_session
 from app.infrastructure.services.analytics_service import AnalyticsService
 from app.infrastructure.db.models.application_outcome import OutcomeStatus
+from app.api.dependencies import get_current_user_id as _get_current_user_str
 
 
 logger = logging.getLogger(__name__)
@@ -23,32 +24,14 @@ router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 
 
 # =============================================================================
-# Auth Dependency (reusing existing pattern)
+# Auth Dependency — delegates to centralized JWT verification
 # =============================================================================
 
 async def get_current_user_id(
-    authorization: Optional[str] = Header(None)
+    user_id_str: str = Depends(_get_current_user_str),
 ) -> UUID:
-    """Extract user ID from authorization header."""
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header required"
-        )
-    
-    try:
-        scheme, token = authorization.split(" ", 1)
-        if scheme.lower() != "bearer":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authorization scheme"
-            )
-        return UUID(token)
-    except (ValueError, AttributeError):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authorization token"
-        )
+    """Convert verified JWT user_id (str) to UUID for downstream repos."""
+    return UUID(user_id_str)
 
 
 # =============================================================================

@@ -8,7 +8,7 @@ These models define the core business entities and validation rules.
 from datetime import datetime
 from enum import Enum
 from typing import Optional, List
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 import uuid
 
 
@@ -162,8 +162,7 @@ class UserProfile(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CollegeMetadata(BaseModel):
@@ -184,8 +183,7 @@ class College(BaseModel):
     metadata: Optional[CollegeMetadata] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CollegeSearchResult(BaseModel):
@@ -214,8 +212,7 @@ class UserExclusion(BaseModel):
     college_id: uuid.UUID
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EmbeddingRequest(BaseModel):
