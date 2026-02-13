@@ -13,6 +13,7 @@ from typing import Optional, List, TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import Column, JSON
+from pydantic import ConfigDict
 from sqlmodel import Field, SQLModel
 
 from app.domain.models import (
@@ -154,8 +155,7 @@ class UserProfile(UserProfileBase, table=True):
         description="Last update timestamp"
     )
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserProfileCreate(UserProfileBase):

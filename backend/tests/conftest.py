@@ -4,9 +4,20 @@ Test configuration and fixtures for College List AI.
 Provides shared fixtures for unit and integration tests.
 """
 
+import sys
 import pytest
 from typing import AsyncGenerator
 from unittest.mock import MagicMock, AsyncMock
+
+# Mock slowapi before any fixture imports app.main
+if "slowapi" not in sys.modules:
+    _mock_slowapi = MagicMock()
+    _mock_slowapi.Limiter = MagicMock(return_value=MagicMock())
+    _mock_slowapi.errors = MagicMock()
+    _mock_slowapi.errors.RateLimitExceeded = type("RateLimitExceeded", (Exception,), {})
+    sys.modules["slowapi"] = _mock_slowapi
+    sys.modules["slowapi.util"] = MagicMock()
+    sys.modules["slowapi.errors"] = _mock_slowapi.errors
 
 from fastapi.testclient import TestClient
 from httpx import AsyncClient

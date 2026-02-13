@@ -43,21 +43,9 @@ class VectorService:
     - Cache population from Gemini Search results
     """
     
-    _instance: Optional["VectorService"] = None
-    _supabase: Optional[Client] = None
-    _genai_client: Optional[genai.Client] = None
-    _initialized: bool = False
-    
-    def __new__(cls) -> "VectorService":
-        """Singleton pattern for connection pooling."""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
     
     def __init__(self):
-        if not self._initialized:
-            self._initialize()
-            VectorService._initialized = True
+        self._initialize()
     
     def _initialize(self) -> None:
         """Initialize Supabase and GenAI clients using Settings."""

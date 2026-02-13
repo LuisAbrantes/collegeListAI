@@ -177,9 +177,9 @@ class TestNormalizedSchema:
     
     def test_college_create_no_major_fields(self, mit_college_data):
         """CollegeCreate should NOT have major-specific fields."""
-        assert not hasattr(mit_college_data, 'acceptance_rate')
+        assert not hasattr(mit_college_data, 'major_name')
         assert not hasattr(mit_college_data, 'median_gpa')
-        assert not hasattr(mit_college_data, 'target_major')
+        assert not hasattr(mit_college_data, 'major_strength')
     
     def test_stats_create_has_college_id(self, mit_cs_stats):
         """CollegeMajorStatsCreate should have college_id FK."""

@@ -6,6 +6,7 @@ Supports SSE streaming for real-time responses.
 """
 
 import json
+from functools import lru_cache
 from typing import Optional, List
 from uuid import UUID
 
@@ -124,13 +125,15 @@ class ExclusionResponse(BaseModel):
 # Dependency Injection
 # ============================================================================
 
+@lru_cache(maxsize=1)
 def get_vector_service() -> VectorService:
-    """Get vector service instance."""
+    """Get vector service instance (cached singleton via DI)."""
     return VectorService()
 
 
+@lru_cache(maxsize=1)
 def get_gemini_service() -> GeminiService:
-    """Get Gemini service instance."""
+    """Get Gemini service instance (cached singleton via DI)."""
     return GeminiService()
 
 
@@ -370,10 +373,7 @@ async def add_exclusion(
     user_id: UUID = Depends(get_current_user_id)
 ):
     """Add a college to the user's exclusion list."""
-    # This would use the Supabase client directly
-    from app.domain.services import UserProfileService
-    
-    # In a full implementation, you'd have an ExclusionService
+    # TODO: Implement ExclusionService with proper repository
     return ExclusionResponse(
         user_id=str(user_id),
         college_name=request.college_name,

@@ -54,24 +54,13 @@ class GeminiService:
     - Structured JSON output parsing
     """
     
-    _instance: Optional["GeminiService"] = None
-    _client: Optional[genai.Client] = None
-    _initialized: bool = False
     
     # Configuration constants
     MAX_OUTPUT_TOKENS = 8192
     TEMPERATURE = 0.7
     
-    def __new__(cls) -> "GeminiService":
-        """Singleton pattern."""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-    
     def __init__(self):
-        if not self._initialized:
-            self._initialize()
-            GeminiService._initialized = True
+        self._initialize()
     
     def _initialize(self) -> None:
         """Initialize Gemini client using Settings."""
