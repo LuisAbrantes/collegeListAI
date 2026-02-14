@@ -172,9 +172,9 @@ class CollegeMajorStatsBase(SQLModel):
     )
     
     data_source: Optional[str] = Field(
-        default="gemini",
+        default="perplexity",
         max_length=100,
-        description="Source: gemini, ollama_simulated, manual, common_data_set"
+        description="Source: perplexity, manual, common_data_set"
     )
 
 

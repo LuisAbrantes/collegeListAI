@@ -2,7 +2,7 @@
 Scorer Node for College List AI
 
 Scores and classifies universities using the domain scoring engine.
-NO HARDCODED FALLBACK - relies entirely on cache + Gemini Search.
+NO HARDCODED FALLBACK - relies entirely on cache + Web Search.
 """
 
 import logging

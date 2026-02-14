@@ -11,6 +11,7 @@ Design:
 
 import json
 import logging
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 import httpx
@@ -29,8 +30,8 @@ from app.infrastructure.db.database import get_session_context
 logger = logging.getLogger(__name__)
 
 
-# System prompt for the agent
-SYSTEM_PROMPT = """You are an expert college advisor helping students build and manage their college list.
+# Default System prompt (Fallback)
+DEFAULT_SYSTEM_PROMPT = """You are an expert college advisor helping students build and manage their college list.
 
 CRITICAL: CONTEXT AWARENESS - FOLLOW-UP QUESTIONS
 When the user responds briefly (e.g., "yes", "tell me more", "all of them", "I'm interested"):
@@ -127,6 +128,31 @@ Would you like to add [University] to your college list?
 DATA ACCURACY: Always use the admission_category field returned by get_college_info - it is auto-calculated. Do not invent acceptance rates or categories from memory.
 
 REMEMBER: You're helping students build THEIR college list - a central tool for their application journey."""
+
+
+def _load_system_prompt() -> str:
+    """Load system prompt from external markdown file."""
+    try:
+        # Path: app/agents/nodes/agent_node.py -> app/infrastructure/ai/SYSTEM_PROMPT.md
+        current_file = Path(__file__).resolve()
+        # Go up 3 levels: nodes -> agents -> app
+        app_dir = current_file.parent.parent.parent
+        prompt_path = app_dir / "infrastructure" / "ai" / "SYSTEM_PROMPT.md"
+        
+        if prompt_path.exists():
+            logger.info(f"Loading system prompt from {prompt_path}")
+            return prompt_path.read_text(encoding="utf-8")
+        else:
+            logger.warning(f"System prompt file not found at {prompt_path}, using default.")
+            return DEFAULT_SYSTEM_PROMPT
+            
+    except Exception as e:
+        logger.error(f"Error loading system prompt: {e}")
+        return DEFAULT_SYSTEM_PROMPT
+
+
+# Load prompt on module import
+SYSTEM_PROMPT = _load_system_prompt()
 
 
 async def agent_node(state: RecommendationAgentState) -> Dict[str, Any]:
@@ -247,10 +273,8 @@ async def _call_llm_with_tools(messages: List[Dict[str, str]]) -> Optional[Dict[
     
     if settings.synthesis_provider == "groq":
         return await _call_groq_with_tools(messages)
-    elif settings.synthesis_provider == "perplexity":
+    else:  # perplexity
         return await _call_perplexity_with_tools(messages)
-    else:  # ollama - no native function calling, use prompt-based
-        return await _call_ollama_with_tools(messages)
 
 
 async def _call_groq_with_tools(messages: List[Dict[str, str]]) -> Optional[Dict[str, Any]]:
@@ -282,7 +306,6 @@ async def _call_groq_with_tools(messages: List[Dict[str, str]]) -> Optional[Dict
             }
             
     except httpx.HTTPStatusError as e:
-        # Log the actual error response for debugging
         error_body = e.response.text if hasattr(e.response, 'text') else str(e)
         logger.error(f"Groq API error: {e.response.status_code} - {error_body}")
         return None
@@ -293,23 +316,11 @@ async def _call_groq_with_tools(messages: List[Dict[str, str]]) -> Optional[Dict
 
 async def _call_perplexity_with_tools(messages: List[Dict[str, str]]) -> Optional[Dict[str, Any]]:
     """
-    Call Perplexity API.
+    Call Perplexity API with prompt-based tool selection.
     
-    Note: Perplexity doesn't support function calling natively.
-    We use prompt-based tool selection instead.
+    Perplexity doesn't support native function calling,
+    so we inject tool-selection instructions into the prompt.
     """
-    # Perplexity doesn't have native function calling
-    # Fall back to prompt-based approach
-    return await _call_ollama_with_tools(messages)
-
-
-async def _call_ollama_with_tools(messages: List[Dict[str, str]]) -> Optional[Dict[str, Any]]:
-    """
-    Call Ollama without native function calling.
-    
-    Uses prompt-based tool selection.
-    """
-    # Add tool selection instruction to prompt
     tool_prompt = """
 Based on the user's query, decide which tool to use:
 1. search_colleges - if user wants recommendations
@@ -323,22 +334,22 @@ Respond with JSON: {"tool": "tool_name", "args": {...}} or {"tool": "none", "res
     enhanced_messages.append({"role": "system", "content": tool_prompt})
     
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            # Combine messages into single prompt for Ollama
-            prompt = "\n".join([f"{m['role']}: {m['content']}" for m in enhanced_messages])
-            
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
-                f"{settings.ollama_base_url}/api/generate",
+                "https://api.perplexity.ai/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {settings.perplexity_api_key}",
+                    "Content-Type": "application/json",
+                },
                 json={
-                    "model": settings.ollama_model,
-                    "prompt": prompt,
-                    "format": "json",
-                    "stream": False,
+                    "model": settings.perplexity_model,
+                    "messages": enhanced_messages,
+                    "temperature": 0.3,
                 },
             )
             response.raise_for_status()
             data = response.json()
-            text = data.get("response", "")
+            text = data["choices"][0]["message"]["content"]
             
             # Parse tool call from response
             try:
@@ -359,7 +370,7 @@ Respond with JSON: {"tool": "tool_name", "args": {...}} or {"tool": "none", "res
                 return {"content": text, "tool_calls": []}
                 
     except Exception as e:
-        logger.error(f"Ollama API error: {e}")
+        logger.error(f"Perplexity API error: {e}")
         return None
 
 
@@ -442,22 +453,24 @@ async def _call_llm_for_response(messages: List[Dict[str, str]]) -> Optional[str
             logger.error(f"Groq final response error: {e}")
             return None
     
-    else:  # Ollama fallback
+    else:  # perplexity
         try:
-            prompt = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
-            
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
-                    f"{settings.ollama_base_url}/api/generate",
+                    "https://api.perplexity.ai/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.perplexity_api_key}",
+                        "Content-Type": "application/json",
+                    },
                     json={
-                        "model": settings.ollama_model,
-                        "prompt": prompt,
-                        "stream": False,
+                        "model": settings.perplexity_model,
+                        "messages": messages,
+                        "temperature": 0.7,
                     },
                 )
                 response.raise_for_status()
                 data = response.json()
-                return data.get("response", "")
+                return data["choices"][0]["message"]["content"]
         except Exception as e:
-            logger.error(f"Ollama final response error: {e}")
+            logger.error(f"Perplexity final response error: {e}")
             return None

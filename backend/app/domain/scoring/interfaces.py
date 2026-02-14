@@ -55,7 +55,7 @@ class UniversityData:
     state: Optional[str] = None
     
     # Metadata
-    data_source: str = "unknown"  # IPEDS, Common_Data_Set, Gemini_Verified
+    data_source: str = "unknown"  # IPEDS, Common_Data_Set, Verified_Web_Source
     last_verified_at: Optional[str] = None
     official_url: Optional[str] = None
     

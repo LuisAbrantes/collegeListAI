@@ -2,15 +2,17 @@
 College Search Service for College List AI
 
 Implements Hybrid LLM Pipeline for 429 resilience:
-Phase 1: Local cache query (via JOINed tables)
-Phase 2: Gemini raw web search → Ollama JSON structuring
-Phase 3: Auto-populate cache (normalized relational upsert)
+        Phase 1: Existing database search (pgvector smart search)
+        Phase 2: Perplexity raw web search → Groq/Perplexity JSON structuring
+        Phase 3: Fallback logic for missing fields
+ized relational upsert)
 Phase 4: Return combined list for scoring
 
 Architecture:
-- Gemini (with Search Grounding): Fetches raw text from web sources
-- Ollama (Gemma 3:27b local): Structures raw text into JSON schema
-- Resilience: 429 retry with 40s backoff, then cache fallback
+    - Perplexity (Sonar-Pro): Fetches raw text from web sources
+    - Groq (LLaMA 3 70B): Structures raw text into JSON schema
+    - Supabase (pgvector): Stores validated college data
+ckoff, then cache fallback
 """
 
 import asyncio
@@ -20,8 +22,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
 import httpx
-from google import genai
-from google.genai import types
+
 from pydantic import BaseModel, Field
 
 from app.config.settings import settings
@@ -64,7 +65,7 @@ class UniversityExtraction(BaseModel):
 
 
 class StructuredUniversityResponse(BaseModel):
-    """Schema for structured response from Ollama."""
+    """Schema for structured response from AI."""
     universities: List[UniversityExtraction] = Field(..., description="List of universities")
 
 
@@ -77,12 +78,11 @@ class CollegeSearchService:
     
     SEARCH_PROVIDER (who performs web search):
     - perplexity: Perplexity Sonar API (recommended)
-    - gemini: Google Gemini with Search Grounding
+    - perplexity: Perplexity Sonar API
     
     SYNTHESIS_PROVIDER (who structures JSON):
     - groq: Groq Cloud API (fast, LLaMA 3.3)
     - perplexity: Perplexity Sonar (same API for everything)
-    - ollama: Local Ollama (free, slower)
     """
     
     def __init__(
@@ -96,17 +96,13 @@ class CollegeSearchService:
     
     def _init_clients(self):
         """Initialize clients based on provider settings."""
-        # Gemini client (for search_provider == gemini)
-        if settings.google_api_key:
-            self.gemini_client = genai.Client(api_key=settings.google_api_key)
-        else:
-            self.gemini_client = None
-        
         # Perplexity client (for search_provider == perplexity)
-        if settings.perplexity_api_key:
+        self.perplexity_url = "https://api.perplexity.ai/chat/completions"
+        self.perplexity_api_key = settings.perplexity_api_key
+        if self.perplexity_api_key:
             from openai import OpenAI
             self.perplexity_client = OpenAI(
-                api_key=settings.perplexity_api_key,
+                api_key=self.perplexity_api_key,
                 base_url="https://api.perplexity.ai"
             )
         else:
@@ -392,12 +388,11 @@ Never explain. If you don't have data, estimate based on similar schools."""
         
         Step 1: SEARCH (search_provider)
         - perplexity: Perplexity Sonar API
-        - gemini: Google Gemini with Search Grounding
         
         Step 2: SYNTHESIS (synthesis_provider)
         - groq: Groq Cloud API (fast)
         - perplexity: Perplexity Sonar (same API)
-        - ollama: Local Ollama (free)
+        - perplexity: Perplexity Sonar (paid)
         """
         # ======================
         # STEP 1: WEB SEARCH
@@ -409,9 +404,6 @@ Never explain. If you don't have data, estimate based on similar schools."""
             logger.info("[SEARCH] Using Perplexity Sonar...")
             raw_text = await self._perplexity_raw_search_with_retry(major, profile, student_type)
             
-        elif settings.search_provider == "gemini":
-            logger.info("[SEARCH] Using Gemini with Search Grounding...")
-            raw_text = await self._gemini_raw_search_with_retry(major, profile, student_type)
         
         # Search failed - return empty list (no fallback)
         if not raw_text:
@@ -429,9 +421,8 @@ Never explain. If you don't have data, estimate based on similar schools."""
             logger.info(f"[SYNTHESIS] Perplexity structuring {data_source} data...")
             return await self._perplexity_structure_text(raw_text, major, data_source)
             
-        else:  # ollama
-            logger.info(f"[SYNTHESIS] Ollama structuring {data_source} data...")
-            return await self._ollama_structure_text(raw_text, major, data_source)
+        # Fallback if no specific provider logic matched (shouldn't happen with strict types)
+        return []
     
     async def _perplexity_raw_search_with_retry(
         self,
@@ -478,9 +469,9 @@ Use the most recent 2024/2025 admission data available."""
                 
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     response = await client.post(
-                        "https://api.perplexity.ai/chat/completions",
+                        self.perplexity_url,
                         headers={
-                            "Authorization": f"Bearer {settings.perplexity_api_key}",
+                            "Authorization": f"Bearer {self.perplexity_api_key}",
                             "Content-Type": "application/json",
                         },
                         json={
@@ -519,159 +510,7 @@ Use the most recent 2024/2025 admission data available."""
         
         return None
     
-    async def _gemini_raw_search_with_retry(
-        self,
-        major: str,
-        profile: Dict[str, Any],
-        student_type: str
-    ) -> Optional[str]:
-        """
-        Gemini Search Grounding for RAW TEXT (no JSON).
-        
-        Includes 429 resilience: wait 40s and retry once.
-        """
-        if not self.gemini_client:
-            logger.warning("Gemini client not initialized, skipping web search")
-            return None
-        
-        gpa = profile.get("gpa", 3.5)
-        is_domestic = student_type == "domestic"
-        nationality = profile.get("nationality", "US" if is_domestic else "Unknown")
-        
-        # Prompt for RAW TEXT output (NOT JSON)
-        prompt = f"""Research the LATEST college admission statistics for {major} programs.
 
-Student Profile:
-- GPA: {gpa}/4.0
-- Type: {"Domestic US" if is_domestic else f"International from {nationality}"}
-
-Find 15 US universities with strong {major} programs. Include:
-- 3-4 highly selective (acceptance rate < 20%)
-- 5-6 moderately selective (20-50% acceptance rate)
-- 5-6 accessible options (> 50% acceptance rate)
-
-For EACH university, provide the following information in a clear format:
-1. Full official university name
-2. Campus setting (Urban, Suburban, or Rural)
-3. Overall acceptance rate (as a percentage)
-4. Median GPA of admitted students
-5. SAT score range (25th and 75th percentile)
-6. Program strength rating for {major} (1-10 scale)
-7. Need-blind policy for international students (Yes/No)
-8. Whether they meet 100% of demonstrated financial need (Yes/No)
-
-Use the most recent 2024/2025 admission data available. Present the information clearly."""
-
-        for attempt in range(MAX_RETRIES + 1):
-            try:
-                logger.info(f"Gemini raw search attempt {attempt + 1}/{MAX_RETRIES + 1}...")
-                
-                response = self.gemini_client.models.generate_content(
-                    model=settings.gemini_model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        temperature=0.3,
-                        max_output_tokens=4000,
-                        # NO response_mime_type or response_schema - raw text only
-                        tools=[types.Tool(google_search=types.GoogleSearch())]
-                    )
-                )
-                
-                raw_text = response.text or ""
-                logger.info(f"Gemini returned {len(raw_text)} characters of raw text")
-                return raw_text
-                
-            except Exception as e:
-                error_str = str(e)
-                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                    if attempt < MAX_RETRIES:
-                        logger.warning(f"Gemini 429 rate limit hit. Waiting {RETRY_WAIT_SECONDS}s before retry...")
-                        await asyncio.sleep(RETRY_WAIT_SECONDS)
-                        continue
-                    else:
-                        logger.error(f"Gemini 429 after {MAX_RETRIES + 1} attempts. Using cache fallback.")
-                        return None
-                else:
-                    logger.error(f"Gemini error: {e}")
-                    raise
-        
-        return None
-    
-    async def _ollama_structure_text(
-        self,
-        raw_text: str,
-        major: str,
-        data_source: str = "hybrid"
-    ) -> List[UniversityData]:
-        """
-        Use local Ollama to structure raw text into JSON.
-        
-        Args:
-            raw_text: Unstructured text from search provider
-            major: Student's intended major
-            data_source: Which provider fetched the data (perplexity/gemini)
-        """
-        structuring_prompt = f"""You are a data extraction assistant. Extract university information from the following text and format it as valid JSON.
-
-RAW TEXT:
-{raw_text}
-
-IMPORTANT: Extract ALL universities mentioned and format them according to this EXACT JSON schema:
-{{
-  "universities": [
-    {{
-      "name": "Full University Name",
-      "campus_setting": "URBAN" | "SUBURBAN" | "RURAL",
-      "acceptance_rate": 0.15,
-      "median_gpa": 3.9,
-      "sat_25th": 1400,
-      "sat_75th": 1550,
-      "major_strength_score": 8,
-      "need_blind_international": false,
-      "meets_full_need": false
-    }}
-  ]
-}}
-
-RULES:
-1. acceptance_rate must be a decimal between 0 and 1 (e.g., 15% → 0.15)
-2. median_gpa must be between 0.0 and 4.0
-3. SAT scores must be between 400 and 1600
-4. major_strength_score must be an integer from 1 to 10
-5. If data is missing, use reasonable estimates based on the university's selectivity
-6. campus_setting must be exactly "URBAN", "SUBURBAN", or "RURAL"
-
-CRITICAL - NEED-BLIND POLICY:
-- need_blind_international should be TRUE ONLY for these confirmed schools: Harvard, Yale, Princeton, MIT, Amherst, Dartmouth, Bowdoin
-- For ALL other schools, default to FALSE unless explicitly stated otherwise
-- Most public universities (like Penn State, UC schools, state universities) are NOT need-blind for international students
-- When in doubt, use FALSE
-
-Return ONLY the valid JSON object, nothing else."""
-
-        try:
-            logger.info(f"Ollama is structuring the {data_source} response...")
-            async with httpx.AsyncClient(timeout=300.0) as client:
-                response = await client.post(
-                    f"{settings.ollama_base_url}/api/generate",
-                    json={
-                        "model": settings.ollama_model,
-                        "prompt": structuring_prompt,
-                        "format": "json",
-                        "stream": False,
-                    },
-                )
-                response.raise_for_status()
-                result = response.json()
-                json_text = result.get("response", "")
-                
-                return self._parse_structured_response(json_text, major, data_source=data_source)
-                
-        except httpx.HTTPError as e:
-            logger.error(f"Ollama structuring failed: {e}")
-            # Try to parse anything useful from the raw text
-            return self._fallback_parse_raw_text(raw_text, major)
-    
     async def _groq_structure_text(
         self,
         raw_text: str,

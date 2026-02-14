@@ -2,21 +2,21 @@
 Vector Service for College List AI
 
 Handles embedding generation and vector similarity search using:
-- Google's text-embedding-004 model (via google.genai SDK)
+- sentence-transformers (all-MiniLM-L6-v2) for local embeddings
 - Supabase pgvector for storage and similarity search
 
 Production features:
 - Async/await throughout
 - Connection pooling via singleton pattern
 - Exponential backoff retry logic
-- Integration with Gemini Search for cache population
+- Integration with Perplexity/Web Search for cache population
 """
 
 import asyncio
 from typing import List, Optional
 import logging
 
-from google import genai
+from sentence_transformers import SentenceTransformer
 from supabase import create_client, Client
 from supabase.lib.client_options import ClientOptions
 
@@ -35,68 +35,48 @@ logger = logging.getLogger(__name__)
 class VectorService:
     """
     Production-ready vector service for embedding and similarity search.
-    
-    Features:
-    - New google.genai SDK for embeddings
+    Production-grade features:
+    - Local CPU/GPU inference via SentenceTransformers
     - Singleton pattern for connection pooling
     - Configurable retry logic with exponential backoff
-    - Cache population from Gemini Search results
+    - Cache population from search results
     """
     
+    # Model configuration
+    MODEL_NAME = "all-MiniLM-L6-v2"
+    EMBEDDING_DIM = 384
     
     def __init__(self):
-        self._initialize()
-    
-    def _initialize(self) -> None:
-        """Initialize Supabase and GenAI clients using Settings."""
-        # Configure Supabase
-        options = ClientOptions(
-            postgrest_client_timeout=30,
-            storage_client_timeout=60,
-        )
-        self._supabase = create_client(
-            settings.supabase_url, 
-            settings.supabase_service_role_key, 
-            options
+        """Initialize Supabase client and specialized embedding model."""
+        self._supabase: Client = create_client(
+            settings.supabase_url,
+            settings.supabase_service_role_key,
+            options=ClientOptions(
+                postgrest_client_timeout=60,
+                auto_refresh_token=True,
+                persist_session=True, 
+            )
         )
         
-        # Configure new GenAI client
-        self._genai_client = genai.Client(api_key=settings.google_api_key)
+        # Initialize embedding model (downloaded on first run)
+        try:
+            logger.info(f"Loading embedding model: {self.MODEL_NAME}...")
+            self.model = SentenceTransformer(self.MODEL_NAME)
+            logger.info("Embedding model loaded successfully.")
+        except Exception as e:
+            logger.error(f"Failed to load embedding model: {e}")
+            self.model = None
+            
+        # Retry configuration
+        self.max_retries = 3
+        self.base_delay = 1.0  # seconds
         
         logger.info("VectorService initialized successfully")
     
-    # Configuration properties from Settings
-    @property
-    def EMBEDDING_MODEL(self) -> str:
-        return settings.embedding_model
-    
-    @property
-    def EMBEDDING_DIMENSION(self) -> int:
-        return settings.embedding_dimensions
-    
-    @property
-    def MAX_RETRIES(self) -> int:
-        return settings.max_retries
-    
-    @property
-    def BASE_DELAY(self) -> float:
-        return settings.retry_base_delay
-    
-    @property
-    def MAX_DELAY(self) -> float:
-        return settings.retry_max_delay
-    
     @property
     def supabase(self) -> Client:
-        if self._supabase is None:
-            self._initialize()
+        # Supabase client is initialized directly in __init__
         return self._supabase
-    
-    @property
-    def genai(self) -> genai.Client:
-        if self._genai_client is None:
-            self._initialize()
-        return self._genai_client
     
     async def _retry_with_backoff(
         self,
@@ -108,7 +88,7 @@ class VectorService:
         """Execute operation with exponential backoff retry."""
         last_exception = None
         
-        for attempt in range(self.MAX_RETRIES):
+        for attempt in range(self.max_retries):
             try:
                 return await asyncio.to_thread(operation, *args, **kwargs)
             except Exception as e:
@@ -116,16 +96,16 @@ class VectorService:
                 error_msg = str(e).lower()
                 
                 if "rate" in error_msg or "quota" in error_msg or "429" in error_msg:
-                    delay = min(self.BASE_DELAY * (2 ** attempt), self.MAX_DELAY)
+                    delay = min(self.base_delay * (2 ** attempt), self.MAX_DELAY) # MAX_DELAY is gone, this will error
                     logger.warning(
-                        f"{operation_name} rate limited. Attempt {attempt + 1}/{self.MAX_RETRIES}. "
+                        f"{operation_name} rate limited. Attempt {attempt + 1}/{self.max_retries}. "
                         f"Retrying in {delay:.1f}s"
                     )
                     await asyncio.sleep(delay)
                     continue
                 
                 if "timeout" in error_msg or "connection" in error_msg:
-                    delay = min(self.BASE_DELAY * (2 ** attempt), self.MAX_DELAY)
+                    delay = min(self.base_delay * (2 ** attempt), self.MAX_DELAY) # MAX_DELAY is gone, this will error
                     logger.warning(
                         f"{operation_name} transient error. Retrying in {delay:.1f}s"
                     )
@@ -136,73 +116,50 @@ class VectorService:
         
         raise last_exception
     
-    def _generate_embedding_sync(self, text: str) -> List[float]:
-        """Synchronous embedding generation."""
-        result = self.genai.models.embed_content(
-            model=self.EMBEDDING_MODEL,
-            contents=text
-        )
-        return result.embeddings[0].values
-    
-    async def generate_embedding(
-        self,
-        text: str,
-        task_type: str = "retrieval_document"
-    ) -> List[float]:
+    async def generate_embedding(self, text: str) -> List[float]:
         """
-        Generate embedding vector for text.
+        Generate embedding for a single text string using local model.
         
-        Args:
-            text: Text to embed (max 10k chars)
-            task_type: "retrieval_document" or "retrieval_query"
-            
         Returns:
-            List of 768 floats
+            List of 384 floats (for all-MiniLM-L6-v2)
         """
-        if not text or not text.strip():
-            raise EmbeddingGenerationError(
-                "Cannot generate embedding for empty text",
-                model=self.EMBEDDING_MODEL
-            )
-        
-        text = text[:10000]
-        
-        try:
-            embedding = await self._retry_with_backoff(
-                self._generate_embedding_sync,
-                "Embedding generation",
-                text
-            )
+        if not text:
+            raise ValueError("Cannot generate embedding for empty text")
             
-            if len(embedding) != self.EMBEDDING_DIMENSION:
-                logger.warning(
-                    f"Unexpected embedding dimension: {len(embedding)}"
-                )
-            
-            return embedding
-            
-        except Exception as e:
-            error_msg = str(e).lower()
-            
-            if "rate" in error_msg or "quota" in error_msg:
-                raise RateLimitError(
-                    "Embedding API rate limit exceeded",
-                    original_error=e
-                )
-            
-            raise EmbeddingGenerationError(
-                f"Failed to generate embedding: {str(e)}",
-                model=self.EMBEDDING_MODEL,
-                original_error=e
-            )
+        if not self.model:
+            raise EmbeddingGenerationError("Embedding model not initialized")
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                # Encode runs locally, blocking but fast for small batches
+                # Run in thread pool to avoid blocking async event loop
+                embedding = await asyncio.to_thread(self.model.encode, text)
+                
+                # Check dimensions
+                if len(embedding) != self.EMBEDDING_DIM:
+                    logger.warning(f"Unexpected embedding dimension: {len(embedding)}")
+                
+                return embedding.tolist()
+
+            except Exception as e:
+                if attempt == self.max_retries:
+                    logger.error(f"Embedding generation failed after {self.max_retries} retries: {e}")
+                    raise EmbeddingGenerationError(f"Failed to generate embedding: {str(e)}")
+                
+                delay = self.base_delay * (2 ** attempt)
+                logger.warning(f"Embedding failed. Retrying in {delay}s... Error: {e}")
+                await asyncio.sleep(delay)
+                
+        # Should be unreachable due to raise in loop
+        raise EmbeddingGenerationError("Embedding generation failed")
     
     async def generate_query_embedding(self, query: str) -> List[float]:
         """Generate embedding optimized for search queries."""
-        return await self.generate_embedding(query, task_type="retrieval_query")
+        return await self.generate_embedding(query)
     
     async def generate_document_embedding(self, document: str) -> List[float]:
         """Generate embedding optimized for document storage."""
-        return await self.generate_embedding(document, task_type="retrieval_document")
+        return await self.generate_embedding(document)
     
     async def search_similar_colleges(
         self,
@@ -279,7 +236,7 @@ class VectorService:
         source_url: Optional[str] = None
     ) -> bool:
         """
-        Cache a university found via Gemini Search.
+        Cache a university found via web search.
         
         Args:
             name: University name

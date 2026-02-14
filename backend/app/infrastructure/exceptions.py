@@ -90,7 +90,7 @@ class SimilaritySearchError(VectorServiceError):
 
 
 class AIServiceError(CollegeListAIError):
-    """Raised when AI/Gemini operations fail."""
+    """Raised when AI (Groq/Perplexity) operations fail."""
     
     def __init__(
         self,

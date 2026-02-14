@@ -19,15 +19,13 @@ class TestSettings:
         # These should be loaded from .env
         assert settings.supabase_url is not None
         assert settings.supabase_service_role_key is not None
-        assert settings.google_api_key is not None
     
     def test_settings_has_defaults(self):
         """Settings should have sensible defaults."""
         from app.config.settings import settings
         
         # These should always be set (either from defaults or .env)
-        assert settings.gemini_model is not None
-        assert settings.embedding_model is not None
+
         assert settings.environment in ("development", "production", "testing")
         assert settings.max_retries >= 1
     

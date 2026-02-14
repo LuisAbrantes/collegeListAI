@@ -20,7 +20,7 @@ alembic>=1.14.0
 greenlet>=3.0.0
 
 # AI/ML
-google-genai>=1.0.0
+sentence-transformers>=2.2.0
 langgraph>=1.0.0
 
 # Payments

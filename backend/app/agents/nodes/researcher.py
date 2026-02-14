@@ -3,7 +3,7 @@ Researcher Node for College List AI
 
 Implements HYBRID SEARCH strategy via CollegeSearchService:
 - Phase 1: Local cache query (fast, via JOINed tables)
-- Phase 2: Gemini grounding (if cache insufficient)
+- Phase 2: Web Search grounding (if cache insufficient)
 - Phase 3: Auto-populate cache (normalized Data Flywheel)
 
 Uses get_effective_major() to respect derived_major from user prompt.
@@ -78,7 +78,7 @@ async def researcher_node(state: RecommendationAgentState) -> Dict[str, Any]:
                 "need_blind_international": uni.need_blind_international,
                 "data_source": uni.data_source,
             })
-            if uni.data_source == "gemini":
+            if uni.data_source == "perplexity":
                 sources.append({
                     "title": uni.name,
                     "uri": f"https://www.google.com/search?q={uni.name.replace(' ', '+')}"

@@ -6,14 +6,10 @@ All environment variables are validated at startup.
 
 PROVIDER ARCHITECTURE:
 ======================
-- SEARCH_PROVIDER: Who performs web search for college data
-  - perplexity: Perplexity Sonar API (recommended)
-  - gemini: Google Gemini with Search Grounding
-  
+- SEARCH_PROVIDER: Perplexity Sonar API (web search for college data)
 - SYNTHESIS_PROVIDER: Who structures JSON and generates responses
-  - groq: Groq Cloud API (fast, LLaMA 3.3)
-  - perplexity: Perplexity Sonar (use same API for everything)
-  - ollama: Local Ollama (free, no rate limits)
+  - groq: Groq Cloud API (fast, LLaMA 3.3) — default
+  - perplexity: Perplexity Sonar (use same API for search + synthesis)
 """
 
 import os
@@ -28,8 +24,8 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables.
     
     Two-provider architecture:
-    - SEARCH_PROVIDER: Web search (perplexity or gemini)
-    - SYNTHESIS_PROVIDER: JSON structuring + response generation (groq, perplexity, ollama)
+    - SEARCH_PROVIDER: Web search (perplexity)
+    - SYNTHESIS_PROVIDER: JSON structuring + response generation (groq, perplexity)
     """
     
     # Supabase Configuration
@@ -38,12 +34,7 @@ class Settings(BaseSettings):
     supabase_service_role_key: str
     supabase_jwt_secret: Optional[str] = None  # Settings > API > JWT Secret (HS256 fallback)
     
-    # Google AI Configuration
-    google_api_key: Optional[str] = None
-    gemini_api_key: Optional[str] = None
-    gemini_model: str = "gemini-2.0-flash"
-    embedding_model: str = "text-embedding-004"
-    embedding_dimensions: int = 768
+
     
     # Application Settings
     environment: str = "development"
@@ -64,7 +55,6 @@ class Settings(BaseSettings):
     admin_api_key: Optional[str] = None
     
     # AI/Search Configuration
-    search_grounding_enabled: bool = True
     max_recommendations: int = 10
     similarity_threshold: float = 0.7
     
@@ -72,16 +62,13 @@ class Settings(BaseSettings):
     # PROVIDER CONFIGURATION
     # ============================================================
     
-    # SEARCH_PROVIDER: Who performs web search for college data
-    # - perplexity: Perplexity Sonar API (recommended, best for search)
-    # - gemini: Google Gemini with Search Grounding
-    search_provider: Literal["perplexity", "gemini"] = "perplexity"
+    # SEARCH_PROVIDER: Perplexity Sonar API for web search
+    search_provider: Literal["perplexity"] = "perplexity"
     
     # SYNTHESIS_PROVIDER: Who structures JSON and generates responses
     # - groq: Groq Cloud API (fast inference, LLaMA 3.3)
     # - perplexity: Perplexity Sonar (same API for search + synthesis)
-    # - ollama: Local Ollama (free, no rate limits, but slow)
-    synthesis_provider: Literal["groq", "perplexity", "ollama"] = "groq"
+    synthesis_provider: Literal["groq", "perplexity"] = "groq"
     
     # ============================================================
     # PROVIDER-SPECIFIC CONFIGURATION
@@ -98,9 +85,6 @@ class Settings(BaseSettings):
     groq_api_key: Optional[str] = None
     groq_model: str = "llama-3.3-70b-versatile"  # or mixtral-8x7b-32768
     
-    # Ollama Configuration (for synthesis, fully local)
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "gemma3:27b"
     
     # Rate Limiting
     rate_limit_requests: int = 100
@@ -156,26 +140,15 @@ class Settings(BaseSettings):
         import logging
         logger = logging.getLogger(__name__)
         
-        # Normalize gemini_api_key to google_api_key
-        if not self.google_api_key and self.gemini_api_key:
-            self.google_api_key = self.gemini_api_key
-        
-        # Validate SEARCH_PROVIDER
-        if self.search_provider == "perplexity":
-            if not self.perplexity_api_key:
-                raise ValueError("PERPLEXITY_API_KEY required when SEARCH_PROVIDER=perplexity")
-        elif self.search_provider == "gemini":
-            if not self.google_api_key:
-                raise ValueError("GOOGLE_API_KEY required when SEARCH_PROVIDER=gemini")
+        # Perplexity is always required (search provider)
+        if not self.perplexity_api_key:
+            raise ValueError("PERPLEXITY_API_KEY is required")
         
         # Validate SYNTHESIS_PROVIDER
         if self.synthesis_provider == "groq":
             if not self.groq_api_key:
                 raise ValueError("GROQ_API_KEY required when SYNTHESIS_PROVIDER=groq")
-        elif self.synthesis_provider == "perplexity":
-            if not self.perplexity_api_key:
-                raise ValueError("PERPLEXITY_API_KEY required when SYNTHESIS_PROVIDER=perplexity")
-        # ollama doesn't require API keys (local)
+        # perplexity key already validated above
         
         logger.info(f"Providers configured: search={self.search_provider}, synthesis={self.synthesis_provider}")
         

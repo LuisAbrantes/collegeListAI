@@ -58,7 +58,7 @@ python -m pytest tests/unit/test_major_segmented_cache.py -v
 
 ## 🏛 Architecture: Smart Sourcing RAG
 1. **Phase 1 (Cache)**: Checks `colleges_cache` for the specific `target_major`.
-2. **Phase 2 (Discovery)**: If cache is empty or stale, triggers LLM Grounding (Gemini/Ollama).
+2. **Phase 2 (Discovery)**: If cache is empty or stale, triggers Web Search Grounding (Perplexity).
 3. **Phase 3 (Flywheel)**: Auto-populates cache with results from Phase 2.
 4. **Phase 4 (Scoring)**: Combined results are passed to the MatchScorer.
 
@@ -66,34 +66,7 @@ python -m pytest tests/unit/test_major_segmented_cache.py -v
 
 ## 🤖 LLM Configuration
 
-### Switching Providers
-Set `LLM_PROVIDER` in your `.env`:
-```bash
-# Use cloud (Gemini)
-LLM_PROVIDER=gemini
 
-# Use local (Ollama)  
-LLM_PROVIDER=ollama
-```
-
-### Switching Gemini Models
-Set `GEMINI_MODEL` in your `.env`:
-```bash
-# Current options:
-GEMINI_MODEL=gemini-1.5-flash      # Fast, cost-effective
-GEMINI_MODEL=gemini-1.5-pro        # More capable
-GEMINI_MODEL=gemini-2.0-flash      # Default - fast + grounding
-GEMINI_MODEL=gemini-2.0-flash-exp  # Experimental
-
-# Future (when available):
-GEMINI_MODEL=gemini-3.0-flash
-```
-
-### Switching Ollama Models
-```bash
-OLLAMA_MODEL=gemma3:27b   # Current default
-OLLAMA_MODEL=llama3:8b    # Alternative
-```
 
 ---
 
@@ -101,4 +74,4 @@ OLLAMA_MODEL=llama3:8b    # Alternative
 - **Framework**: FastAPI
 - **Orchestration**: LangGraph
 - **Database**: PostgreSQL (Supabase) + SQLModel
-- **AI**: Google Generative AI (Gemini 1.5/2.0) / Ollama
+- **AI**: Groq (Llama 3.3) + Perplexity (Sonar)

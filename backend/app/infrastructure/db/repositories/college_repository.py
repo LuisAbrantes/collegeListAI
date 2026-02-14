@@ -294,8 +294,8 @@ class CollegeMajorStatsRepository(
         """
         Get fresh colleges with Smart Correction.
         
-        If current_provider is 'gemini', treat 'ollama_simulated'
-        data as stale regardless of updated_at.
+        
+        Filters out 'ollama_simulated' data to ensure high quality.
         """
         threshold = datetime.utcnow() - timedelta(days=STALENESS_DAYS)
         
@@ -304,13 +304,13 @@ class CollegeMajorStatsRepository(
             CollegeMajorStats.updated_at >= threshold
         ]
         
-        if current_provider == "gemini":
-            base_conditions.append(
-                or_(
-                    CollegeMajorStats.data_source != "ollama_simulated",
-                    CollegeMajorStats.data_source.is_(None)
-                )
+        # Filter out simulated/low-quality data sources
+        base_conditions.append(
+            or_(
+                CollegeMajorStats.data_source != "ollama_simulated",
+                CollegeMajorStats.data_source.is_(None)
             )
+        )
         
         stmt = (
             select(
@@ -382,13 +382,13 @@ class CollegeMajorStatsRepository(
             CollegeMajorStats.updated_at >= threshold
         ]
         
-        if current_provider == "gemini":
-            base_conditions.append(
-                or_(
-                    CollegeMajorStats.data_source != "ollama_simulated",
-                    CollegeMajorStats.data_source.is_(None)
-                )
+        # Filter out simulated/low-quality data sources
+        base_conditions.append(
+            or_(
+                CollegeMajorStats.data_source != "ollama_simulated",
+                CollegeMajorStats.data_source.is_(None)
             )
+        )
         
         stmt = select(func.count()).select_from(CollegeMajorStats).where(
             and_(*base_conditions)

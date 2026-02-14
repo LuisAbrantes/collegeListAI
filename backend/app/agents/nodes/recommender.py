@@ -12,8 +12,7 @@ import logging
 from typing import Dict, Any, List
 
 import httpx
-from google import genai
-from google.genai import types
+
 
 from app.config.settings import settings
 from app.agents.state import (
@@ -226,9 +225,9 @@ Use markdown formatting. Be conversational and encouraging."""
         elif settings.synthesis_provider == "perplexity":
             logger.info("[SYNTHESIS] Perplexity generating response...")
             final_output = await _generate_with_perplexity(prompt)
-        else:  # ollama
-            logger.info("[SYNTHESIS] Ollama generating response...")
-            final_output = await _generate_with_ollama(prompt)
+        else:  # ollama removed — only groq/perplexity
+            logger.warning(f"Unknown synthesis_provider '{settings.synthesis_provider}', using Groq")
+            final_output = await _generate_with_groq(prompt)
         
         if not final_output:
             final_output = format_recommendations_for_output(recommendations, state)
@@ -317,9 +316,9 @@ Student Context:
 IMPORTANT: Answer the question directly and concisely. Do NOT generate a college list unless explicitly asked.
 Use markdown formatting."""
 
-    if settings.llm_provider == "ollama":
-        return await _generate_with_ollama(prompt)
-    return await _generate_with_gemini(prompt)
+    if settings.synthesis_provider == "groq":
+        return await _generate_with_groq(prompt)
+    return await _generate_with_perplexity(prompt)
 
 
 async def _generate_chat_response(query: str, profile: Dict[str, Any]) -> str:
@@ -331,9 +330,9 @@ ask them to tell you about their intended major and academic profile.
 
 Use markdown formatting."""
 
-    if settings.llm_provider == "ollama":
-        return await _generate_with_ollama(prompt)
-    return await _generate_with_gemini(prompt)
+    if settings.synthesis_provider == "groq":
+        return await _generate_with_groq(prompt)
+    return await _generate_with_perplexity(prompt)
 
 
 async def _generate_follow_up_response(
@@ -368,45 +367,12 @@ Answer the specific question about these schools. If asking about:
 
 Be conversational and helpful. Use markdown formatting."""
 
-    if settings.llm_provider == "ollama":
-        return await _generate_with_ollama(prompt)
-    return await _generate_with_gemini(prompt)
+    if settings.synthesis_provider == "groq":
+        return await _generate_with_groq(prompt)
+    return await _generate_with_perplexity(prompt)
 
 
-async def _generate_with_ollama(prompt: str) -> str:
-    """Generate response using local Ollama API."""
-    try:
-        logger.info("Ollama is generating the response...")
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            response = await client.post(
-                f"{settings.ollama_base_url}/api/generate",
-                json={
-                    "model": settings.ollama_model,
-                    "prompt": prompt,
-                    "stream": False,
-                },
-            )
-            response.raise_for_status()
-            result = response.json()
-            return result.get("response", "")
-    except httpx.HTTPError as e:
-        logger.error(f"Ollama API error in recommender: {e}")
-        raise RuntimeError(f"Ollama generation failed: {e}")
 
-
-async def _generate_with_gemini(prompt: str) -> str:
-    """Generate response using Gemini API with search grounding."""
-    client = genai.Client(api_key=settings.google_api_key)
-    response = client.models.generate_content(
-        model=settings.gemini_model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=0.7,
-            max_output_tokens=2000,
-            tools=[types.Tool(google_search=types.GoogleSearch())]
-        )
-    )
-    return response.text if response.text else ""
 
 
 async def _generate_with_groq(prompt: str) -> str:
@@ -435,16 +401,16 @@ async def _generate_with_groq(prompt: str) -> str:
             )
             
             if response.status_code == 429:
-                logger.warning("Groq rate limit hit, falling back to Ollama...")
-                return await _generate_with_ollama(prompt)
+                logger.warning("Groq rate limit hit, falling back to Perplexity...")
+                return await _generate_with_perplexity(prompt)
             
             response.raise_for_status()
             data = response.json()
             return data["choices"][0]["message"]["content"]
             
     except httpx.HTTPError as e:
-        logger.error(f"Groq API error: {e}, falling back to Ollama...")
-        return await _generate_with_ollama(prompt)
+        logger.error(f"Groq API error: {e}, falling back to Perplexity...")
+        return await _generate_with_perplexity(prompt)
     except (KeyError, IndexError) as e:
         logger.error(f"Groq response parsing error: {e}")
         return ""
@@ -476,16 +442,16 @@ async def _generate_with_perplexity(prompt: str) -> str:
             )
             
             if response.status_code == 429:
-                logger.warning("Perplexity rate limit hit, falling back to Ollama...")
-                return await _generate_with_ollama(prompt)
+                logger.warning("Perplexity rate limit hit, falling back to Groq...")
+                return await _generate_with_groq(prompt)
             
             response.raise_for_status()
             data = response.json()
             return data["choices"][0]["message"]["content"]
             
     except httpx.HTTPError as e:
-        logger.error(f"Perplexity API error: {e}, falling back to Ollama...")
-        return await _generate_with_ollama(prompt)
+        logger.error(f"Perplexity API error: {e}, falling back to Groq...")
+        return await _generate_with_groq(prompt)
     except (KeyError, IndexError) as e:
         logger.error(f"Perplexity response parsing error: {e}")
         return ""

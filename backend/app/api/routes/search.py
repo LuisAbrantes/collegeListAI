@@ -18,7 +18,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.infrastructure.db.vector_service import VectorService
-from app.infrastructure.ai.gemini_service import GeminiService
+
 from app.infrastructure.exceptions import (
     VectorServiceError,
     AIServiceError,
@@ -132,9 +132,7 @@ def get_vector_service() -> VectorService:
 
 
 @lru_cache(maxsize=1)
-def get_gemini_service() -> GeminiService:
-    """Get Gemini service instance (cached singleton via DI)."""
-    return GeminiService()
+
 
 
 # ============================================================================
