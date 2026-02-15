@@ -108,7 +108,7 @@ async def stripe_webhook(request: Request):
     event_type = event.get("type")
     
     # Idempotency check
-    if is_event_processed(event_id):
+    if await is_event_processed(event_id):
         logger.info(f"Event {event_id} already processed, skipping")
         return {"status": "already_processed"}
     

@@ -21,17 +21,64 @@ if "slowapi" not in sys.modules:
 
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
+import jwt
+import time
+from app.config.settings import get_settings
+from app.api.dependencies import get_current_user_id
+from app.infrastructure.db.database import get_session
 
+
+# =============================================================================
+# Auth & DB Fixtures
+# =============================================================================
+
+@pytest.fixture
+def mock_user_id():
+    """Return a consistent UUID for testing."""
+    return "00000000-0000-0000-0000-000000000001"
+
+@pytest.fixture
+def auth_headers(mock_user_id):
+    """Generate valid Authorization headers with a signed HS256 token."""
+    settings = get_settings()
+    # If secret is not set in env (e.g. CI), use a dummy one and ensure expected behavior
+    secret = settings.supabase_jwt_secret or "super-secret-jwt-key-for-testing"
+    
+    payload = {
+        "sub": mock_user_id,
+        "aud": "authenticated",
+        "iss": f"{settings.supabase_url}/auth/v1" if settings.supabase_url else "https://supabase.co/auth/v1",
+        "exp": int(time.time()) + 3600,
+    }
+    token = jwt.encode(payload, secret, algorithm="HS256")
+    return {"Authorization": f"Bearer {token}"}
+
+@pytest.fixture
+def mock_db_session():
+    """Mock the DB session to prevent actual DB calls."""
+    mock_session = AsyncMock()
+    return mock_session
 
 # =============================================================================
 # App Fixtures
 # =============================================================================
 
 @pytest.fixture
-def app():
-    """Get the FastAPI application."""
+def app(mock_db_session):
+    """Get the FastAPI application with mocked DB and Auth."""
     from app.main import app
-    return app
+    
+    # Override DB session
+    app.dependency_overrides[get_session] = lambda: mock_db_session
+    
+    # We DON'T override Auth by default to test the actual JWT logic
+    # But if we wanted to skip auth verification entirely:
+    # app.dependency_overrides[get_current_user_id] = lambda: "00000000-0000-0000-0000-000000000001"
+    
+    yield app
+    
+    # Clean up overrides
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture
